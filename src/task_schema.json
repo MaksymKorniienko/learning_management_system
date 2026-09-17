@@ -1,5 +1,5 @@
 {
     "taskId": "task-001",
     "title": "Set up local development environment",
-    "completionPolicy": "OPTIONAL_FOR_READING"
+    "completionPolicy": "TASK_TYPE_DEPENDENT"
 }
