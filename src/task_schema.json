@@ -1,0 +1,5 @@
+{
+    "taskId": "task-001",
+    "title": "Set up local development environment",
+    "completionPolicy": "STRICT_ARTIFACT_MANDATORY"
+}
