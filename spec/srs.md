@@ -9,8 +9,8 @@
 | :--- | :--- |
 | **System Name** | Personal Knowledge & Learning Management System (PKLMS) |
 | **Document Type** | Software Requirements Specification (SRS) / SDD Core Artifact |
-| **Document Version** | 0.1.0-draft |
-| **Status** | Active Working Draft (Pre-implementation) |
+| **Document Version** | 0.2.0-draft |
+| **Status** | Approved Baseline Specification (Pre-implementation Milestone 1) |
 | **Development Discipline** | Specification-Driven Development (SDD) with Mandatory TDD |
 | **Author / Systems Architect** | Lead System Analyst & Architect / Maksym Korniienko (KN-32) |
 | **Academic Affiliation** | Department of System Design, ESC "IASA", Igor Sikorsky Kyiv Polytechnic Institute |
@@ -259,7 +259,7 @@ sequenceDiagram
         Policy-->>API: Policy Verification Passed
         API->>FS: Persist Artifact to storage/artifacts/{goal}/{task}/
         API->>DB: UPDATE task SET status='COMPLETED'
-        API->>DB: INSERT INTO fts_notes (id, title, content)
+        API->>DB: INSERT OR REPLACE INTO notes_fts (node_id, title, content)
         API->>API: Trigger Recursive Status Roll-up (Tree Engine)
         API->>DB: UPDATE parent modules & goal status
         API-->>UI: HTTP 200 OK (Updated Node & Goal Progress)
@@ -358,18 +358,18 @@ Requirements in this document are authored using the formal normative keywords d
 | Requirement ID | Subsystem | Normative Statement (RFC 2119) | Observable Verification |
 | :--- | :--- | :--- | :--- |
 | **`REQ-TREE-001`** | Hierarchy | The system SHALL allow the user to create, edit, reorder, and delete Goals, Modules, and Tasks in a recursive tree structure. | Tree CRUD operations succeed via REST API and Web UI. |
-| **`REQ-TREE-002`** | Hierarchy | Executable Tasks SHALL exist strictly as leaf nodes. Container nodes (`GOAL`, `MODULE`) SHALL NOT hold direct Tasks if sub-modules are present. | Schema rejects mixed children with HTTP 422. |
+| **`REQ-TREE-002`** | Hierarchy | Executable Tasks SHALL exist strictly as leaf nodes. Container modules and top-level goal allocations SHALL NOT hold direct Tasks if sub-modules are present. | Schema rejects mixed children with HTTP 422. |
 | **`REQ-TREE-003`** | Hierarchy | The tree hierarchy depth from root Goal to any leaf Task SHALL NOT exceed 5 levels. | Insertion at depth $> 5$ rejected with HTTP 422. |
 | **`REQ-TREE-004`** | Hierarchy | The system SHALL compute status and progress percentage bottom-up automatically using the deterministic roll-up algorithm. | Progress calculation updates immediately on task completion. |
-| **`REQ-TREE-005`** | Hierarchy | When a Goal achieves 100% completion, the system SHALL automatically transition it from Workspace Mode to Knowledge Catalog Mode. | UI conceals checkboxes and reveals catalog viewer. |
+| **`REQ-TREE-005`** | Hierarchy | When a Goal achieves 100% completion, the system SHALL automatically transition it from Workspace Mode to Knowledge Catalog Mode; adding new uncompleted nodes SHALL revoke Catalog Mode. | UI conceals checkboxes and reveals catalog viewer; adding nodes reverts to Workspace. |
 | **`REQ-POLICY-001`**| Execution | The system SHALL allow completing `READING` tasks via an Acknowledge button without requiring an artifact, but SHALL save notes if provided. | Task marked `COMPLETED` on click. |
-| **`REQ-POLICY-002`**| Execution | The system SHALL require a Markdown note exceeding 100 characters before permitting a `RESEARCH` task to transition to `COMPLETED`. | Rejects notes $\le 100$ characters with HTTP 422. |
+| **`REQ-POLICY-002`**| Execution | The system SHALL require a Markdown note exceeding 100 effective characters (excluding Markdown syntax, whitespace, and default scaffolding headers) before permitting a `RESEARCH` task to transition to `COMPLETED`. | Rejects notes $\le 100$ effective characters with HTTP 422. |
 | **`REQ-POLICY-003`**| Execution | The system SHALL require a valid Git repository URL/commit hash, local script file, or Markdown summary ($>100$ chars) for `PRACTICE` tasks. | Validates URL regex or file existence before completion. |
 | **`REQ-POLICY-004`**| Execution | The system SHALL require an attached project file, report, or compiled summary ($>0$ bytes) before completing a `PROJECT/LAB` task. | Verifies attached file presence and size $> 0$. |
 | **`REQ-POLICY-005`**| Execution | If a completed note is edited below the character threshold, the system SHALL retain `COMPLETED` status and display an inline non-blocking warning. | Warning banner renders; status remains `COMPLETED`. |
 | **`REQ-ARTIFACT-001`**| Storage | The system SHALL store uploaded artifacts in sandboxed directories with sanitized filenames preventing path traversal attacks. | Filename sanitized; file persisted under goal/task folder. |
 | **`REQ-ARTIFACT-002`**| Storage | The system SHALL reject any uploaded artifact whose MIME type is not present in the defined whitelist. | Unwhitelisted MIME returns HTTP 415. |
-| **`REQ-ARTIFACT-003`**| Storage | Deletion of the sole qualifying artifact for a completed mandatory task MUST prompt a confirmation guard and revert task status to `IN_PROGRESS`. | Confirmation dialog displayed; status reverts on confirm. |
+| **`REQ-ARTIFACT-003`**| Storage | Deletion of the sole qualifying artifact (or clearing `git_url` on a completed `PRACTICE` task without other artifacts) MUST prompt a confirmation guard and revert task status to `IN_PROGRESS`. | Confirmation dialog displayed; status reverts on confirm. |
 | **`REQ-WIKI-001`** | Vault | The system SHALL parse and resolve local `[[Note Title]]` and cross-goal `[[Goal / Note Title]]` wikilinks to internal node entities. | Active hyperlink created linking to target note. |
 | **`REQ-WIKI-002`** | Vault | When a node's title is modified, the system SHALL atomically update all referencing `[[wikilinks]]` across all notes in the database and filesystem. | Batch regex replace updates referencing notes. |
 | **`REQ-WIKI-003`** | Vault | The system SHALL provide full-text search across note titles and contents using an embedded SQLite FTS5 index. | FTS query returns ranked results with snippets. |
@@ -396,22 +396,22 @@ Requirements in this document are authored using the formal normative keywords d
 ### 6. System Domain Model & State Machines
 
 #### 6.1 Educational Goal & Tree Hierarchy
-The core data structure of PKLMS is a rooted tree $T = (V, E)$, where $V$ represents the set of learning nodes and $E \subset V \times V$ represents hierarchical parent-child relationships.
+The core data structure of PKLMS models each curriculum through a clean separation of the overarching Goal entity (persisted in the `goals` table) and its internal hierarchical tree of content nodes (persisted in the `nodes` table). Top-level nodes directly child to the Goal maintain `parent_id = NULL` and point to `goal_id`.
 
 ```mermaid
 graph TD
-    Goal["Goal: Master Distributed Systems (Root)"]
-    Module1["Module 1: Consensus Protocols (Container)"]
-    Module2["Module 2: Storage Engines (Container)"]
-    SubMod1["Sub-Module 1.1: Raft (Container)"]
+    Goal["Goal: Master Distributed Systems (Curriculum Envelope / 'goals' Table)"]
+    Module1["Module 1: Consensus Protocols (Container / 'nodes' Table)"]
+    Module2["Module 2: Storage Engines (Container / 'nodes' Table)"]
+    SubMod1["Sub-Module 1.1: Raft (Container / 'nodes' Table)"]
     
     Task1["Task 1.1.1: Read Raft Paper (Leaf / READING)"]
     Task2["Task 1.1.2: Comparative Analysis (Leaf / RESEARCH)"]
     Task3["Task 1.1.3: Implement Raft Leader Election (Leaf / PRACTICE)"]
     Task4["Task 2.1: Implement LSM-Tree (Leaf / PROJECT)"]
 
-    Goal --> Module1
-    Goal --> Module2
+    Goal -.->|goal_id, parent_id=NULL| Module1
+    Goal -.->|goal_id, parent_id=NULL| Module2
     Module1 --> SubMod1
     SubMod1 --> Task1
     SubMod1 --> Task2
@@ -428,25 +428,27 @@ graph TD
 ```
 
 The domain model enforces three structural invariants:
-1. **Invariant 6.1 (Strict Node Typing)**: The set of nodes is partitioned into three disjoint sets:
-   $$V = V_{GOAL} \cup V_{MODULE} \cup V_{TASK}$$
-   where $|V_{GOAL}| = 1$ per tree (the root node), $V_{MODULE}$ are non-terminal containers, and $V_{TASK}$ are terminal work units.
-2. **Invariant 6.2 (Strict Leaf-Level Tasks)**: Executable tasks MUST exist strictly as leaf nodes:
-   $$\forall v \in V_{TASK} \implies \text{deg}^+(v) = 0$$
-   Container nodes ($V_{GOAL}, V_{MODULE}$) MUST NOT hold executable task policies directly if they are divided into sub-modules. Mixed container nodes are strictly prohibited:
-   $$\forall v \in (V_{GOAL} \cup V_{MODULE}), \quad \text{Children}(v) \subset V_{MODULE} \lor \text{Children}(v) \subset V_{TASK}$$
-3. **Invariant 6.3 (Nesting Depth Boundary)**: The path length from the root goal node to any leaf task node SHALL NOT exceed 5 levels:
-   $$\forall v \in V, \quad \text{depth}(v) \le 5$$
+1. **Invariant 6.1 (Strict Node Typing & Decoupled Envelope)**: The `goals` table stores high-level curriculum metadata (`id`, `title`, `description`, `status`, `progress`). The content tree inside the `nodes` table is partitioned strictly into two disjoint sets:
+   $$V_{\text{nodes}} = V_{\text{MODULE}} \cup V_{\text{TASK}}$$
+   where $V_{\text{MODULE}}$ are structural container nodes and $V_{\text{TASK}}$ are executable leaf work units. The type `'GOAL'` is excluded from `node_type`, eliminating denormalization and redundant record creation.
+2. **Invariant 6.2 (Strict Leaf-Level Tasks & Homogeneous Containers)**: Executable tasks MUST exist strictly as leaf nodes:
+   $$\forall v \in V_{\text{TASK}} \implies \text{deg}^+(v) = 0$$
+   Container modules ($V_{\text{MODULE}}$) MUST NOT mix sub-modules and executable tasks:
+   $$\forall v \in V_{\text{MODULE}}, \quad \text{Children}(v) \subset V_{\text{MODULE}} \lor \text{Children}(v) \subset V_{\text{TASK}}$$
+   Similarly, top-level children of a Goal (`parent_id = NULL`) MUST be homogeneous:
+   $$\text{TopNodes}(goal) \subset V_{\text{MODULE}} \lor \text{TopNodes}(goal) \subset V_{\text{TASK}}$$
+3. **Invariant 6.3 (Nesting Depth Boundary)**: The path length from a top-level node down to any leaf task node SHALL NOT exceed 5 levels:
+   $$\forall v \in V_{\text{nodes}}, \quad 1 \le \text{depth}(v) \le 5$$
 
 #### 6.2 Task Lifecycle & State Transitions
-Every task $v \in V_{TASK}$ maintains a formal lifecycle governed by a finite state machine:
+Every task $v \in V_{\text{TASK}}$ maintains a formal lifecycle governed by a finite state machine:
 
 ```mermaid
 stateDiagram-v2
     [*] --> NOT_STARTED: Task Created
     NOT_STARTED --> IN_PROGRESS: User opens task / attaches draft
     IN_PROGRESS --> COMPLETED: Policy validation succeeds
-    COMPLETED --> IN_PROGRESS: Sole mandatory artifact deleted (Guarded)
+    COMPLETED --> IN_PROGRESS: Sole mandatory artifact deleted or cleared (Guarded)
     COMPLETED --> COMPLETED: Post-completion edit (Soft warning if < threshold)
 ```
 
@@ -454,27 +456,36 @@ The valid states and transition triggers are defined as follows:
 - **`NOT_STARTED`**: Initial state. No work has been recorded.
 - **`IN_PROGRESS`**: Active state. The learner is drafting notes or working on artifacts.
 - **`COMPLETED`**: Terminal successful state. The task's assigned `completionPolicy` has been satisfied and verified.
-- **Guarded State Rollback**: If a learner permanently deletes the sole attached artifact of a completed `MANDATORY` task, the system MUST display a confirmation guard warning that the action will revert the task to `IN_PROGRESS`. Upon confirmation, the status transitions to `IN_PROGRESS` and triggers recursive parent roll-up.
+- **Guarded State Rollback**: If a learner permanently deletes the sole attached artifact of a completed `MANDATORY` task (or clears the qualifying `git_url` on a completed `PRACTICE` task without other files), the system MUST display a confirmation guard warning that the action will revert the task to `IN_PROGRESS`. Upon confirmation, the status transitions to `IN_PROGRESS` and triggers recursive parent roll-up.
 
 #### 6.3 Deterministic Status Roll-up Algorithm
-The completion progress $P(v) \in [0, 100]$ of any node $v \in V$ is evaluated bottom-up deterministically as follows:
+The completion progress $P(v) \in [0, 100]$ across all tree nodes and goals is evaluated bottom-up deterministically by `TreeService`:
 
 1. **For Leaf Tasks ($v \in V_{\text{TASK}}$)**:
-   - $P(v) = 100$, if $\text{Status}(v) = \text{COMPLETED}$
-   - $P(v) = 0$, if $\text{Status}(v) \neq \text{COMPLETED}$
+   - $P(v) = 100.0$, if $\text{Status}(v) = \text{COMPLETED}$
+   - $P(v) = 0.0$, if $\text{Status}(v) \neq \text{COMPLETED}$
 
-2. **For Container Nodes ($v \in V_{\text{GOAL}} \cup V_{\text{MODULE}}$)**:
-   - If $|\text{Children}(v)| = 0$:
-     $$P(v) = 0$$
-   - If $|\text{Children}(v)| > 0$:
+2. **For Container Modules ($v \in V_{\text{MODULE}}$)**:
+   - **Empty Container Progress Penalty**: Any container module without child nodes ($|\text{Children}(v)| = 0$) MUST strictly evaluate to:
+     $$P(v) = 0.0\%, \quad \text{Status}(v) = \text{NOT\_STARTED}$$
+     Empty modules participate in parent average calculations, preventing premature completion of unpopulated curricula.
+   - For populated container modules ($|\text{Children}(v)| > 0$):
      $$P(v) = \frac{1}{|\text{Children}(v)|} \sum_{u \in \text{Children}(v)} P(u)$$
 
-**Parent Node Status Mapping**:
-- **`NOT_STARTED`**: $P(v) = 0$
-- **`IN_PROGRESS`**: $0 < P(v) < 100$
-- **`COMPLETED`**: $P(v) = 100$
+3. **For Educational Goals (`goals` Table)**:
+   The overall goal progress $P(goal)$ aggregates all top-level nodes ($\text{TopNodes}(goal) = \{u \in V_{\text{nodes}} \mid u.\text{goal\_id} = goal.\text{id} \land u.\text{parent\_id} \text{ IS NULL}\}$):
+   $$P(goal) = \begin{cases} 0.0\%, & \text{if } |\text{TopNodes}(goal)| = 0 \\ \frac{1}{|\text{TopNodes}(goal)|} \sum_{u \in \text{TopNodes}(goal)} P(u), & \text{if } |\text{TopNodes}(goal)| > 0 \end{cases}$$
 
-When $P(v_{\text{root}}) = 100$, the Goal transitions automatically from the **Workspace Mode** to the **Knowledge Catalog Mode**.
+**Status Mapping**:
+- **`NOT_STARTED`**: $P(v) = 0.0$
+- **`IN_PROGRESS`**: $0.0 < P(v) < 100.0$
+- **`COMPLETED`**: $P(v) = 100.0$
+
+In a single atomic SQLite transaction, `TreeService` writes the calculated `progress` and `status` to intermediate `nodes` and persists final `progress` and `status` to the `goals` table.
+
+**Catalog Mode Transition & Revocation Invariant**:
+- When $P(goal) = 100.0\%$, the Goal transitions automatically from **Workspace Mode** to **Knowledge Catalog Mode**.
+- **Catalog Mode Revocation**: If a new module or task is added to a Goal currently in Knowledge Catalog Mode ($P = 100\%$), the resulting roll-up recalculation causes $P(goal) < 100\%$. The system MUST automatically revert the Goal's operational state to **Workspace Mode**, restoring task manipulation, checkboxes, and execution controls until all items are completed.
 
 ---
 
@@ -513,8 +524,15 @@ flowchart TD
 - **Completion Policy**: `STRICT_MANDATORY_NOTE`.
 - **Validation Rules**:
   1. The task MUST have an associated Markdown note.
-  2. The text content of the note (excluding markdown syntax and leading/trailing whitespace) MUST exceed **100 characters**.
-  3. The note editor SHALL pre-populate scaffolding headers (`## Summary`, `## Insights`), but SHALL NOT reject completion if headers are customized.
+  2. The text content of the note MUST exceed **100 effective characters** of user-authored synthesis.
+  3. **Scaffolding Text Normalization Rule**: The character validation function for `RESEARCH` notes MUST evaluate meaningful user-authored body content:
+     - All Markdown syntax tokens (`#`, `*`, `_`, `[]`, `()`, `-`, `>`) and newline/whitespace sequences MUST be stripped.
+     - The default scaffolding header labels (`Summary`, `Insights`) SHALL NOT count toward the mandatory 100-character requirement.
+     - **Algorithmic Contract**:
+       $$\text{EffectiveChars} = \text{len}(\text{regex\_clean}(\text{raw\_markdown})) \ge 100$$
+       where `regex_clean` strips Markdown syntax, structural header tokens (`## Summary`, `## Insights`), and leading/trailing whitespace.
+  4. **UI Real-Time Counter**: The embedded editor (`Editor.tsx`) SHALL display a live character counter reflecting strictly the effective non-scaffolding character count (e.g., `42 / 100 characters required`) to prevent user confusion before submission.
+  5. The note editor SHALL pre-populate scaffolding headers (`## Summary`, `## Insights`), but SHALL NOT reject completion if headers are customized, provided `EffectiveChars` $\ge 100$.
 
 #### 7.3 PRACTICE Policy Specification
 - **Task Semantic**: Hands-on technical tasks: writing code, configuring servers, debugging, solving algorithmic exercises.
@@ -524,6 +542,7 @@ flowchart TD
      - An uploaded script/code file (`.py`, `.js`, `.ts`, `.go`, `.rs`, `.sql`, `.sh`, `.cpp`, `.java`, etc.).
      - A valid remote Git repository URL (matching standard regex `^https?://.*\.git$` or `^https?://(github|gitlab|bitbucket)\.com/.+`) with optional commit SHA.
      - A Markdown summary note describing the implementation results ($> 100$ characters).
+  2. **Virtual Artifact Equivalence**: A valid `git_url` (and optional `commit_hash`) stored in the `tasks` table is semantically treated as an active completion artifact for `PRACTICE` tasks, satisfying policy verification without requiring a physical file in the `artifacts` table.
 
 #### 7.4 PROJECT / LAB Policy Specification
 - **Task Semantic**: Milestone delivery: completing a laboratory assignment, developing a capstone module.
@@ -533,8 +552,11 @@ flowchart TD
   2. The attached artifact file MUST exist in storage and have a size $> 0$ bytes.
 
 #### 7.5 Mutability Rules & Guarded Deletion Mechanics
-1. **Post-Completion Editing**: All notes and artifacts remain fully editable after task completion. If subsequent edits cause the character count of a `RESEARCH` note to drop below 100 characters, the task SHALL remain in the `COMPLETED` state, but the UI editor SHALL display an inline non-blocking warning: *"Note is below suggested length (100 characters)"*.
+1. **Post-Completion Editing**: All notes and artifacts remain fully editable after task completion. If subsequent edits cause the character count of a `RESEARCH` note to drop below 100 effective characters, the task SHALL remain in the `COMPLETED` state, but the UI editor SHALL display an inline non-blocking warning: *"Note is below suggested length (100 characters)"*.
 2. **Guarded Mandatory Artifact Deletion**: Deletion of the sole qualifying artifact for a `COMPLETED` mandatory task (`RESEARCH`, `PRACTICE`, `PROJECT`) MUST prompt an explicit confirmation dialog: *"Deleting this artifact will invalidate task completion criteria and revert the task to IN_PROGRESS. Proceed?"*. If confirmed, the system SHALL set task status to `IN_PROGRESS`, delete the file from storage, and recalculate parent roll-up progress.
+3. **Guarded Modification & Clearance of Virtual Git Artifacts**: Clearing, removing, or replacing the `git_url` on a `COMPLETED` `PRACTICE` task that possesses no other attached files in `artifacts` is strictly classified as an **Artifact Deletion Event**:
+   - Any API request (`PATCH` or `PUT /api/tasks/{id}`) attempting to nullify or clear `git_url` on a completed task without other qualifying artifacts MUST require explicit confirmation (`force=true` or guarded confirmation parameter).
+   - Upon confirmed execution, the task status MUST automatically transition to `IN_PROGRESS`, triggering parent progress roll-up recalculation.
 
 ---
 
@@ -544,41 +566,69 @@ flowchart TD
 PKLMS enforces a clear dichotomy between task execution and knowledge consumption through two distinct operational view paradigms:
 
 1. **Workspace Mode (Execution & Decomposition)**:
-   - **Active State**: Displayed whenever a Goal has a completion progress $P(v_{root}) < 100\%$.
+   - **Active State**: Displayed whenever a Goal has a completion progress $P(goal) < 100.0\%$.
    - **Capabilities**:
      - Tree decomposition and task manipulation (creating, editing, reordering, and deleting modules and tasks).
      - Interactive execution controls: "Acknowledge" buttons for `READING`, artifact upload widgets for `PRACTICE`/`PROJECT`, and embedded Markdown editors for `RESEARCH`.
-     - Real-time progress bars indicating status roll-up across parent modules.
+     - Real-time progress bars indicating status roll-up across parent modules and overarching goal.
 2. **Knowledge Catalog Mode (Review & Synthesis)**:
-   - **Finalized State**: Automatically triggered when a Goal reaches $P(v_{root}) = 100\%$.
+   - **Finalized State**: Automatically triggered when a Goal reaches $P(goal) = 100.0\%$.
    - **Capabilities**:
      - Operational checkboxes and completion buttons are concealed to eliminate cognitive friction.
      - The tree hierarchy transforms into an interactive, read-only/editable navigation catalog.
      - The user navigates seamlessly through completed modules and tasks as a cohesive knowledge base.
      - Notes remain open to continuous refinement and editing, serving as an evolving reference asset.
+   - **Catalog Mode Revocation**: If structural changes are introduced (e.g., adding a new module or task, or guarded deletion of an artifact) that drop $P(goal) < 100.0\%$, the Goal instantly reverts to **Workspace Mode**, re-exposing operational checkboxes and editing controls.
 
 #### 8.2 Wikilink Syntax and Bidirectional Graph Invariants
-The knowledge vault implements an interconnected graph structure using the standard wikilink syntax:
+The knowledge vault implements an interconnected graph structure using the standard wikilink syntax with extended scoping:
 - **Local Scope Wikilink**: `[[Target Task Title]]` resolves to a task note within the current Goal.
+- **Intra-Goal Module Scoped Wikilink**: `[[Module Title / Target Task Title]]` explicitly targets a task residing within a specific parent module of the active Goal.
 - **Cross-Goal Scoped Wikilink**: `[[Goal Title / Target Task Title]]` resolves to a specific task note belonging to a different Goal.
-- **Disambiguation Rule**: In the event of duplicate task titles across distinct goals, an unscoped link `[[Target Task Title]]` SHALL resolve to the task within the current Goal context. If no local match exists, the system resolves to the oldest global match and flags an advisory disambiguation notice in the UI.
+- **Full Path Scoped Wikilink**: `[[Goal Title / Module Title / Target Task Title]]` resolves unambiguously across all goals and modules.
+
+**Deterministic Resolution Hierarchy**:
+When resolving an unscoped or ambiguous link `[[Target Title]]`, the resolver evaluates candidate targets according to a strict 4-step precedence hierarchy:
+1. **Step 1 (Local Module Scope)**: Sibling task within the same parent `module_id` as the source note.
+2. **Step 2 (Local Goal Scope)**: Unique matching task within the active `goal_id`.
+3. **Step 3 (Ambiguity Fallback & User Advisory)**: If multiple tasks share the exact same title within the active Goal, resolve to the earliest created record (`created_at ASC`) and surface a non-blocking UI ambiguity badge advising the user to qualify the link as `[[Module Title / Target Title]]`.
+4. **Step 4 (Global Scope)**: Earliest created matching task across all external goals (`created_at ASC`).
+
+**Schema Preservation**:
+Titles in the SQLite `nodes` table deliberately omit a `UNIQUE(goal_id, title)` constraint. This allows learners to naturally repeat task names (e.g., *"Lab 1 Report"* or *"Summary Notes"*) across different modules while relying on the deterministic resolution hierarchy to navigate the graph.
 
 The system maintains a relational index of all links in the `wikilinks` table, enabling instantaneous extraction of **Backlinks** (notes that reference the current note) to facilitate associative learning and knowledge discovery.
 
 #### 8.3 Automated Link Refactoring on Title Modification
 To prevent the silent corruption of knowledge links ("bit rot"), PKLMS implements transactional graph consistency:
 - **Requirement 8.3.1 (Atomic Refactoring)**: When a learner modifies the title of any node $v$ from $T_{old}$ to $T_{new}$, the system MUST execute a transactional batch scan across all stored Markdown notes in the database and filesystem.
-- **Requirement 8.3.2 (Regex Replacement)**: All instances matching `[[T_{old}]]` or `[[Goal / T_{old}]]` MUST be atomically rewritten to `[[T_{new}]]` and `[[Goal / T_{new}]]`.
+- **Requirement 8.3.2 (Regex Replacement)**: All instances matching `[[T_{old}]]`, `[[Module / T_{old}]]`, or `[[Goal / T_{old}]]` MUST be atomically rewritten to reflect $T_{new}$.
 - **Requirement 8.3.3 (Graph Synchronization)**: The internal `wikilinks` relational table MUST be refreshed immediately following the title update to reflect the updated target references.
 
 #### 8.4 Full-Text Search Engine (SQLite FTS5 Integration & Tag Lookups)
 The search subsystem delivers sub-millisecond retrieval across the learner's entire knowledge vault without requiring heavy external search clusters.
 
-1. **SQLite FTS5 Integration**:
-   - All note titles, Markdown bodies, and extracted text artifacts are indexed in a virtual table `notes_fts` using the SQLite FTS5 engine.
+1. **SQLite FTS5 Integration & Unified Table Naming**:
+   - All note titles, Markdown bodies, and extracted text artifacts are indexed in the virtual table `notes_fts` using SQLite's FTS5 extension.
    - The index employs Unicode61 tokenization with case-folding, enabling diacritic-insensitive and case-insensitive search across multilingual text.
    - Queries support prefix matching (e.g., `distrib*`), exact phrase matching (`"consensus algorithm"`), and boolean combinations (`raft AND NOT paxos`).
-2. **Relational Tag Indexing**:
+2. **FTS5 Lifecycle & Synchronization Invariant**:
+   - Because SQLite FTS5 virtual tables do not support relational constraints (`FOREIGN KEY ... ON DELETE CASCADE`), all FTS index mutations are managed directly by `WikiService` and `StorageService` within the same ACID transaction:
+     - **Index on Create/Update**: When a note or task title is persisted or updated, the service executes:
+       ```sql
+       INSERT OR REPLACE INTO notes_fts (node_id, title, content) VALUES (?, ?, ?);
+       ```
+     - **Cleanup on Delete**: When a node or its artifact is deleted, the service explicitly executes:
+       ```sql
+       DELETE FROM notes_fts WHERE node_id = ?;
+       ```
+       prior to deleting the relational node record.
+     - **Consistency Reconciliation**: The administrative routine `TreeService.recalculate_all_goals()` provides an automated rebuild command:
+       ```sql
+       INSERT INTO notes_fts(notes_fts) VALUES('rebuild');
+       ```
+       to restore index integrity during vault recovery.
+3. **Relational Tag Indexing**:
    - The UI editor automatically extracts hashtag tokens (matching regex `#[a-zA-Z0-9_\-]+`) from note content and maps them into the relational `tags` and `node_tags` tables.
    - The search interface exposes a dual-filter paradigm: learners can select multiple `#tags` from a faceted tag cloud while typing lexical keywords to isolate specific learning units with breadcrumb-annotated result cards (`Goal > Module > Task`).
 
@@ -637,7 +687,7 @@ The export engine dynamically synthesizes a comprehensive `README.md` manifest a
 -- SQLite Master Schema for PKLMS (WAL Mode Enabled)
 PRAGMA foreign_keys = ON;
 
--- 1. Goals Table
+-- 1. Goals Table (Curriculum Envelope)
 CREATE TABLE goals (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -649,15 +699,16 @@ CREATE TABLE goals (
     completed_at TEXT
 );
 
--- 2. Nodes Table (Adjacency List Tree Model)
+-- 2. Nodes Table (Adjacency List Tree Model: MODULE containers & TASK work units)
+-- Top-level modules or direct tasks child to Goal maintain parent_id IS NULL and point to goal_id
 CREATE TABLE nodes (
     id TEXT PRIMARY KEY,
     goal_id TEXT NOT NULL,
     parent_id TEXT,
-    node_type TEXT NOT NULL CHECK(node_type IN ('GOAL', 'MODULE', 'TASK')),
+    node_type TEXT NOT NULL CHECK(node_type IN ('MODULE', 'TASK')),
     title TEXT NOT NULL,
     description TEXT DEFAULT '',
-    depth INTEGER NOT NULL CHECK(depth >= 0 AND depth <= 5),
+    depth INTEGER NOT NULL CHECK(depth >= 1 AND depth <= 5),
     position INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL CHECK(status IN ('NOT_STARTED', 'IN_PROGRESS', 'COMPLETED')),
     progress REAL NOT NULL DEFAULT 0.0 CHECK(progress >= 0.0 AND progress <= 100.0),
@@ -668,6 +719,7 @@ CREATE TABLE nodes (
 );
 
 -- 3. Tasks Table (Specific to Leaf Task Nodes)
+-- Virtual Artifact Note: PRACTICE tasks can satisfy policy via git_url / commit_hash without an artifacts row
 CREATE TABLE tasks (
     node_id TEXT PRIMARY KEY,
     task_type TEXT NOT NULL CHECK(task_type IN ('READING', 'RESEARCH', 'PRACTICE', 'PROJECT')),
@@ -719,6 +771,7 @@ CREATE TABLE wikilinks (
 );
 
 -- 8. FTS5 Virtual Table for Full-Text Search
+-- Maintained synchronously by WikiService / StorageService within the host transaction
 CREATE VIRTUAL TABLE notes_fts USING fts5(
     node_id UNINDEXED,
     title,
@@ -743,11 +796,13 @@ CREATE VIRTUAL TABLE notes_fts USING fts5(
 | :--- | :--- | :--- | :--- | :--- |
 | `GET` | `/api/goals` | None | `list[GoalResponse]` | List all goals with progress and status |
 | `POST` | `/api/goals` | `GoalCreateRequest` | `GoalResponse` | Create a new top-level educational goal |
+| `PUT` | `/api/goals/{id}` | `GoalUpdateRequest` | `GoalResponse` | Update goal title or description |
 | `GET` | `/api/goals/{id}/tree` | None | `GoalTreeResponse` | Fetch full hierarchical node tree |
 | `POST` | `/api/nodes` | `NodeCreateRequest` | `NodeResponse` | Add child module or task node |
-| `PUT` | `/api/nodes/{id}` | `NodeUpdateRequest` | `NodeResponse` | Update node title (triggers link refactoring) |
+| `PUT` | `/api/nodes/{id}` | `NodeUpdateRequest` | `NodeResponse` | Update node title/position (triggers link refactoring) |
 | `DELETE` | `/api/nodes/{id}` | None | `StatusRollupResponse` | Delete node and recalculate parent roll-up |
 | `POST` | `/api/tasks/{id}/complete` | `Multipart/Form-Data` | `TaskCompleteResponse` | Submit artifact & evaluate policy gate |
+| `PATCH` | `/api/tasks/{id}` | `TaskPatchRequest` | `TaskCompleteResponse` | Update task fields (e.g. git_url; guarded deletion if cleared) |
 | `POST` | `/api/tasks/{id}/rollback` | None | `TaskCompleteResponse` | Revert task to IN_PROGRESS |
 | `GET` | `/api/search` | `?q={query}&tags={tag}` | `list[SearchHitResponse]` | Execute combined FTS5 + Tag search |
 | `GET` | `/api/export/{goal_id}` | None | Binary Stream (ZIP) | Export goal tree and assets as ZIP archive |
@@ -759,26 +814,76 @@ from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from datetime import datetime
 
+# --- Goal Contracts ---
+
+class GoalBase(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200, description="Title of the educational curriculum")
+    description: Optional[str] = Field(default="", max_length=2000, description="Scope and learning objectives")
+
+class GoalCreateRequest(GoalBase):
+    pass
+
+class GoalUpdateRequest(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    description: Optional[str] = Field(default=None, max_length=2000)
+
+class GoalResponse(GoalBase):
+    id: str
+    status: Literal["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]
+    progress: float = Field(..., ge=0.0, le=100.0)
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime] = None
+
+# --- Node Contracts ---
+
 class NodeBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(default="")
-    node_type: Literal["GOAL", "MODULE", "TASK"]
+    node_type: Literal["MODULE", "TASK"]
 
 class NodeCreateRequest(NodeBase):
     goal_id: str
-    parent_id: Optional[str] = None
+    parent_id: Optional[str] = Field(default=None, description="NULL for top-level modules/tasks within the goal")
     task_type: Optional[Literal["READING", "RESEARCH", "PRACTICE", "PROJECT"]] = None
+    position: Optional[int] = Field(default=0, ge=0)
+
+class NodeUpdateRequest(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    description: Optional[str] = None
+    parent_id: Optional[str] = Field(default=None, description="Allows reparenting with depth and container checks")
+    position: Optional[int] = Field(default=None, ge=0)
 
 class NodeResponse(NodeBase):
     id: str
     goal_id: str
     parent_id: Optional[str]
-    depth: int
+    depth: int = Field(..., ge=1, le=5)
     position: int
     status: Literal["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]
-    progress: float
+    progress: float = Field(..., ge=0.0, le=100.0)
     created_at: datetime
     updated_at: datetime
+
+class NodeTreeResponse(NodeResponse):
+    task_type: Optional[Literal["READING", "RESEARCH", "PRACTICE", "PROJECT"]] = None
+    completion_policy: Optional[str] = None
+    git_url: Optional[str] = None
+    commit_hash: Optional[str] = None
+    children: list["NodeTreeResponse"] = Field(default_factory=list)
+
+class GoalTreeResponse(GoalResponse):
+    root_nodes: list[NodeTreeResponse] = Field(default_factory=list)
+
+# --- Task Execution & Mutation Contracts ---
+
+class TaskPatchRequest(BaseModel):
+    git_url: Optional[str] = None
+    commit_hash: Optional[str] = None
+    confirm_clear_virtual_artifact: bool = Field(
+        default=False, 
+        description="Must be True when clearing git_url on a completed task without other artifacts"
+    )
 
 class TaskCompleteResponse(BaseModel):
     task_id: str
@@ -786,6 +891,25 @@ class TaskCompleteResponse(BaseModel):
     policy_satisfied: bool
     attached_artifacts_count: int
     updated_parent_progress: float
+
+class StatusRollupResponse(BaseModel):
+    affected_node_id: str
+    updated_progress: float
+    updated_status: Literal["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]
+    goal_id: str
+    goal_progress: float
+    goal_status: Literal["NOT_STARTED", "IN_PROGRESS", "COMPLETED"]
+
+# --- Search Contracts ---
+
+class SearchHitResponse(BaseModel):
+    node_id: str
+    goal_id: str
+    title: str
+    snippet: str
+    breadcrumb: str
+    match_type: Literal["fts", "tag"]
+    rank: float
 ```
 
 ---
@@ -849,7 +973,7 @@ All API error responses adhere to the **RFC 7807 (Problem Details for HTTP APIs)
 
 #### 12.3 Recovery from Corrupted Tree States or Missing Artifacts
 - **Missing File Recovery**: If an artifact record exists in SQLite but the corresponding file is missing from `./storage/artifacts/`, the system SHALL NOT crash. It SHALL flag the task with a warning state (`CORRUPTED_ARTIFACT`), prevent export completion, and prompt the user to re-upload the missing file.
-- **Roll-up Recalculation Command**: The system provides an internal reconciliation service (`TreeService.recalculate_all_goals()`) that scans all nodes and deterministically rebuilds all progress percentages from leaf tasks upward, repairing any desynchronized intermediate states.
+- **Roll-up Recalculation & Index Rebuild Command**: The system provides an internal reconciliation service (`TreeService.recalculate_all_goals()`) that scans all nodes and deterministically rebuilds all progress percentages from leaf tasks upward, repairing any desynchronized intermediate states. Additionally, it executes `INSERT INTO notes_fts(notes_fts) VALUES('rebuild')` to guarantee 100% lexical search index consistency across all notes and tasks.
 
 ---
 
@@ -906,23 +1030,32 @@ The project CI pipeline and local git hooks enforce the following automated gate
 
 ### 14. Formal Acceptance Criteria (BDD Given-When-Then Matrix)
 
-#### 14.1 Functional Acceptance Matrix
+##### 14.1 Functional Acceptance Matrix
 
-| Requirement ID | Scenario Description | Given (Initial State) | When (Trigger Action) | Then (Expected Outcome) |
-| :--- | :--- | :--- | :--- | :--- |
-| **`REQ-TREE-001`** | Mixed container prohibition | A Module node containing sub-modules | User attempts to add a direct Task child | The system rejects the request with HTTP 422 and message: "Cannot add task to module with sub-modules". |
-| **`REQ-TREE-002`** | 5-level depth boundary | A node hierarchy at depth 5 | User attempts to add a child node | The system rejects the addition with HTTP 422: "Maximum tree depth of 5 levels reached". |
-| **`REQ-TREE-003`** | Deterministic roll-up | A Module with 2 tasks: 1 COMPLETED, 1 NOT_STARTED | The second task is marked COMPLETED | The parent module progress becomes 100% and status transitions automatically to COMPLETED. |
-| **`REQ-TREE-004`** | Catalog mode transition | A Goal with 99% progress in Workspace Mode | The final remaining task is COMPLETED | Goal progress reaches 100%; UI hides checkboxes and activates Knowledge Catalog Mode. |
-| **`REQ-POLICY-001`** | RESEARCH threshold check | A RESEARCH task with an attached note of 45 characters | User requests task completion | The system rejects completion with HTTP 422: "Note length 45 characters is below mandatory 100-character threshold". |
-| **`REQ-POLICY-002`** | PRACTICE repo validation | A PRACTICE task with git URL `https://github.com/org/repo.git` | User requests task completion | Policy engine validates regex, accepts the URL, and transitions task to COMPLETED. |
-| **`REQ-POLICY-003`** | READING acknowledgment | A READING task with no attached note | User clicks "Acknowledge" button | Task transitions to COMPLETED with zero errors; no note is required. |
-| **`REQ-POLICY-004`** | Soft warning on edit | A COMPLETED RESEARCH task with a 150-char note | User edits note down to 80 chars | Status remains COMPLETED; editor displays inline warning: "Note is below suggested length". |
-| **`REQ-ARTIFACT-001`**| Guarded deletion rollback | A COMPLETED RESEARCH task with 1 mandatory note | User attempts to delete the note | UI shows confirmation prompt; on confirm, note is deleted and task status reverts to IN_PROGRESS. |
-| **`REQ-ARTIFACT-002`**| Traversal attack defense | User uploads file with filename `../../etc/passwd` | Backend sanitizes uploaded filename | Filename is sanitized to `______etc_passwd` and stored strictly inside the sandboxed goal folder. |
-| **`REQ-WIKI-001`** | Automated link refactoring | Note A contains link `[[Old Title]]` | User renames task from "Old Title" to "New Title" | Note A content is atomically updated to `[[New Title]]`; `wikilinks` table updates target reference. |
-| **`REQ-WIKI-002`** | FTS5 full-text retrieval | Vault contains note with term "Byzantine fault" | User searches query `byzantine` | Search returns task hit with snippet and breadcrumb `Distributed Systems > Consensus`. |
-| **`REQ-EXPORT-001`** | Relative link normalization | Note references internal image `/api/artifacts/123` | User downloads Goal ZIP export | Note in ZIP contains normalized relative path `![](./assets/image.png)`; image is present in `./assets/`. |
+| Requirement ID | Scenario ID | Scenario Description | Given (Initial State) | When (Trigger Action) | Then (Expected Outcome) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`REQ-TREE-001`** | `SCEN-TREE-001` | Tree entity CRUD & reparenting | Empty curriculum repository | User creates a Goal, appends Modules, and adds Tasks | Tree structure persists with valid parent references, positions, and depths. |
+| **`REQ-TREE-002`** | `SCEN-TREE-002` | Mixed container prohibition | A Module node containing sub-modules (or Goal with modules) | User attempts to add a direct Task child | The system rejects the addition with HTTP 422: "Cannot add task to container with sub-modules". |
+| **`REQ-TREE-003`** | `SCEN-TREE-003` | 5-level depth boundary | A node hierarchy at depth 5 | User attempts to add a child node | The system rejects the addition with HTTP 422: "Maximum tree depth of 5 levels reached". |
+| **`REQ-TREE-004`** | `SCEN-TREE-004` | Deterministic roll-up & empty penalty | A Module with 2 tasks (1 COMPLETED, 1 NOT_STARTED) and an empty Module | Leaf task state mutates | Progress calculates bottom-up deterministically; empty module evaluates to 0.0% and NOT_STARTED. |
+| **`REQ-TREE-005`** | `SCEN-TREE-005` | Catalog mode transition & revocation | A Goal with 99% progress in Workspace Mode | Final remaining task is COMPLETED, and later a new uncompleted task is added | Progress reaches 100% and activates Knowledge Catalog Mode; adding new task drops progress below 100% and revokes to Workspace Mode. |
+| **`REQ-POLICY-001`** | `SCEN-POLICY-001` | READING acknowledgment | A READING task with no attached note | User clicks "Acknowledge" button | Task transitions to COMPLETED with zero errors; note is saved to vault if provided. |
+| **`REQ-POLICY-002`** | `SCEN-POLICY-002` | RESEARCH scaffolding-clean threshold | A RESEARCH task with scaffolding (`## Summary`, `## Insights`) and 45 body characters | User requests task completion | System rejects completion with HTTP 422: "Effective user text (45 chars) is below mandatory 100-character threshold". |
+| **`REQ-POLICY-003`** | `SCEN-POLICY-003` | PRACTICE repo/code validation | A PRACTICE task with git URL `https://github.com/org/repo.git` | User requests task completion | Policy engine validates regex, accepts the URL as virtual artifact, and transitions task to COMPLETED. |
+| **`REQ-POLICY-004`** | `SCEN-POLICY-004` | PROJECT/LAB artifact check | A PROJECT task with no attached report or 0-byte file | User requests task completion | System rejects completion with HTTP 422: "Mandatory project artifact (> 0 bytes) is required". |
+| **`REQ-POLICY-005`** | `SCEN-POLICY-005` | Soft warning on edit | A COMPLETED RESEARCH task with a 150-char note | User edits note down to 80 chars | Status remains COMPLETED; editor displays inline warning: "Note is below suggested length". |
+| **`REQ-ARTIFACT-001`**| `SCEN-ART-001` | Path sanitization & sandbox | User uploads file with filename `../../etc/passwd` | Backend sanitizes uploaded filename | Filename is sanitized to `______etc_passwd` and stored strictly inside sandboxed goal/task folder. |
+| **`REQ-ARTIFACT-002`**| `SCEN-ART-002` | MIME whitelist rejection | User uploads file with unapproved MIME type (`application/x-dosexec`) | Storage service inspects MIME type | Upload is rejected with HTTP 415: "Unsupported Media Type". |
+| **`REQ-ARTIFACT-003`**| `SCEN-ART-003` | Guarded deletion & virtual git clearance | A COMPLETED task with sole qualifying artifact (file or `git_url`) | User attempts to delete artifact or clear `git_url` | UI/API prompts confirmation guard (`force=true`); on confirm, artifact/git_url is removed and task reverts to IN_PROGRESS. |
+| **`REQ-WIKI-001`** | `SCEN-WIKI-001` | Wikilink parsing & scoped resolution | Notes containing `[[Task]]`, `[[Module/Task]]`, or `[[Goal/Task]]` | Resolver evaluates target hierarchy | Resolves to sibling module task, intra-goal match, or scoped target with backlinks extracted. |
+| **`REQ-WIKI-002`** | `SCEN-WIKI-002` | Automated link refactoring | Note A contains link `[[Old Title]]` | User renames task from "Old Title" to "New Title" | Note A content is atomically updated to `[[New Title]]`; `wikilinks` table updates target reference. |
+| **`REQ-WIKI-003`** | `SCEN-WIKI-003` | FTS5 full-text retrieval | Vault contains note with term "Byzantine fault" | User searches query `byzantine` | Search returns task hit with snippet and breadcrumb `Distributed Systems > Consensus`. |
+| **`REQ-WIKI-004`** | `SCEN-WIKI-004` | Tag taxonomy extraction | Note contains tags `#distributed #consensus` | Note is saved | Tags are extracted into `tags` and `node_tags` tables; faceted filtering returns matching tasks. |
+| **`REQ-EXPORT-001`** | `SCEN-EXP-001` | Directory tree mirroring | A Goal with multi-level modules and tasks | User requests ZIP export | Export engine unpacks into ordered directories with zero-padded prefixes (`01_Module/`). |
+| **`REQ-EXPORT-002`** | `SCEN-EXP-002` | Relative link & asset normalization | Note references internal image `/api/artifacts/123` | User downloads Goal ZIP export | Note in ZIP contains normalized relative path `![](./assets/image.png)`; image is present in `./assets/`. |
+| **`REQ-EXPORT-003`** | `SCEN-EXP-003` | Root README manifest synthesis | A 100% completed Goal exported to ZIP | Export engine completes archive compilation | Root `README.md` manifest contains full curriculum metadata and clickable relative Table of Contents. |
+| **`REQ-UI-001`** | `SCEN-UI-001` | Workspace vs Catalog view switching | A Goal transitioning between <100% and 100% progress | Status roll-up crosses 100% boundary | UI seamlessly toggles between execution controls (Workspace) and cohesive reading view (Catalog). |
+| **`REQ-UI-002`** | `SCEN-UI-002` | Markdown editor & live counter | Empty RESEARCH note opened in editor | User types note content | Editor injects default scaffolding (`## Summary`, `## Insights`) and displays live counter of effective non-scaffold characters. |
 
 #### 14.2 Non-Functional Acceptance Criteria
 1. **Local Latency Budget**:
@@ -948,33 +1081,33 @@ In accordance with SDD governance (Invariant 4.3), the initial traceability matr
 | Requirement ID | Requirement Summary | Acceptance Criterion ID | BDD Scenario ID | Planned Test ID | Planned Target Module | Implementation Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: |
 | **`REQ-TREE-001`** | Recursive Goal/Module/Task CRUD | `ACCEPT-TREE-001` | `SCEN-TREE-001` | `TEST-UNIT-TREE-01` | `services/tree_service.py` | SPECIFIED |
-| **`REQ-TREE-002`** | Strict leaf task constraint | `ACCEPT-TREE-002` | `SCEN-TREE-001` | `TEST-UNIT-TREE-02` | `models/node.py` | SPECIFIED |
-| **`REQ-TREE-003`** | Max nesting depth $\le 5$ | `ACCEPT-TREE-003` | `SCEN-TREE-002` | `TEST-UNIT-TREE-03` | `services/tree_service.py` | SPECIFIED |
-| **`REQ-TREE-004`** | Deterministic status roll-up | `ACCEPT-TREE-004` | `SCEN-TREE-003` | `TEST-UNIT-TREE-04` | `services/tree_service.py` | SPECIFIED |
-| **`REQ-TREE-005`** | Catalog mode on 100% progress | `ACCEPT-TREE-005` | `SCEN-TREE-004` | `TEST-INT-TREE-01`  | `api/routers/goals.py` | SPECIFIED |
-| **`REQ-POLICY-001`**| READING acknowledgment | `ACCEPT-POLICY-001`| `SCEN-POLICY-003`| `TEST-UNIT-POL-01`  | `services/policy_service.py`| SPECIFIED |
-| **`REQ-POLICY-002`**| RESEARCH $>100$ char note | `ACCEPT-POLICY-002`| `SCEN-POLICY-001`| `TEST-UNIT-POL-02`  | `services/policy_service.py`| SPECIFIED |
-| **`REQ-POLICY-003`**| PRACTICE code / git URL | `ACCEPT-POLICY-003`| `SCEN-POLICY-002`| `TEST-UNIT-POL-03`  | `services/policy_service.py`| SPECIFIED |
-| **`REQ-POLICY-004`**| PROJECT report / archive | `ACCEPT-POLICY-004`| `SCEN-POLICY-005`| `TEST-UNIT-POL-04`  | `services/policy_service.py`| SPECIFIED |
-| **`REQ-POLICY-005`**| Soft warning on short edit | `ACCEPT-POLICY-005`| `SCEN-POLICY-004`| `TEST-INT-POL-01`   | `api/routers/tasks.py` | SPECIFIED |
-| **`REQ-ARTIFACT-001`**| Path sanitization & sandbox | `ACCEPT-ART-001`   | `SCEN-ART-002`   | `TEST-UNIT-ART-01`  | `services/storage_service.py`| SPECIFIED |
-| **`REQ-ARTIFACT-002`**| MIME type whitelist enforcement | `ACCEPT-ART-002`   | `SCEN-ART-003`   | `TEST-UNIT-ART-02`  | `services/storage_service.py`| SPECIFIED |
-| **`REQ-ARTIFACT-003`**| Guarded deletion & rollback | `ACCEPT-ART-003`   | `SCEN-ART-001`   | `TEST-INT-ART-01`   | `api/routers/artifacts.py` | SPECIFIED |
-| **`REQ-WIKI-001`** | Wikilink parsing & resolution | `ACCEPT-WIKI-001`  | `SCEN-WIKI-003`  | `TEST-UNIT-WIKI-01` | `services/wiki_service.py` | SPECIFIED |
-| **`REQ-WIKI-002`** | Transactional link refactoring| `ACCEPT-WIKI-002`  | `SCEN-WIKI-001`  | `TEST-INT-WIKI-01`  | `services/wiki_service.py` | SPECIFIED |
-| **`REQ-WIKI-003`** | SQLite FTS5 full-text search | `ACCEPT-WIKI-003`  | `SCEN-WIKI-002`  | `TEST-INT-SRCH-01`  | `services/search_service.py`| SPECIFIED |
+| **`REQ-TREE-002`** | Strict leaf task constraint | `ACCEPT-TREE-002` | `SCEN-TREE-002` | `TEST-UNIT-TREE-02` | `models/node.py` | SPECIFIED |
+| **`REQ-TREE-003`** | Max nesting depth $\le 5$ | `ACCEPT-TREE-003` | `SCEN-TREE-003` | `TEST-UNIT-TREE-03` | `services/tree_service.py` | SPECIFIED |
+| **`REQ-TREE-004`** | Deterministic status roll-up | `ACCEPT-TREE-004` | `SCEN-TREE-004` | `TEST-UNIT-TREE-04` | `services/tree_service.py` | SPECIFIED |
+| **`REQ-TREE-005`** | Catalog mode on 100% progress | `ACCEPT-TREE-005` | `SCEN-TREE-005` | `TEST-INT-TREE-01`  | `api/routers/goals.py` | SPECIFIED |
+| **`REQ-POLICY-001`**| READING acknowledgment | `ACCEPT-POLICY-001`| `SCEN-POLICY-001`| `TEST-UNIT-POL-01`  | `services/policy_service.py`| SPECIFIED |
+| **`REQ-POLICY-002`**| RESEARCH $>100$ char note | `ACCEPT-POLICY-002`| `SCEN-POLICY-002`| `TEST-UNIT-POL-02`  | `services/policy_service.py`| SPECIFIED |
+| **`REQ-POLICY-003`**| PRACTICE code / git URL | `ACCEPT-POLICY-003`| `SCEN-POLICY-003`| `TEST-UNIT-POL-03`  | `services/policy_service.py`| SPECIFIED |
+| **`REQ-POLICY-004`**| PROJECT report / archive | `ACCEPT-POLICY-004`| `SCEN-POLICY-004`| `TEST-UNIT-POL-04`  | `services/policy_service.py`| SPECIFIED |
+| **`REQ-POLICY-005`**| Soft warning on short edit | `ACCEPT-POLICY-005`| `SCEN-POLICY-005`| `TEST-INT-POL-01`   | `api/routers/tasks.py` | SPECIFIED |
+| **`REQ-ARTIFACT-001`**| Path sanitization & sandbox | `ACCEPT-ART-001`   | `SCEN-ART-001`   | `TEST-UNIT-ART-01`  | `services/storage_service.py`| SPECIFIED |
+| **`REQ-ARTIFACT-002`**| MIME type whitelist enforcement | `ACCEPT-ART-002`   | `SCEN-ART-002`   | `TEST-UNIT-ART-02`  | `services/storage_service.py`| SPECIFIED |
+| **`REQ-ARTIFACT-003`**| Guarded deletion & rollback | `ACCEPT-ART-003`   | `SCEN-ART-003`   | `TEST-INT-ART-01`   | `api/routers/artifacts.py` | SPECIFIED |
+| **`REQ-WIKI-001`** | Wikilink parsing & resolution | `ACCEPT-WIKI-001`  | `SCEN-WIKI-001`  | `TEST-UNIT-WIKI-01` | `services/wiki_service.py` | SPECIFIED |
+| **`REQ-WIKI-002`** | Transactional link refactoring| `ACCEPT-WIKI-002`  | `SCEN-WIKI-002`  | `TEST-INT-WIKI-01`  | `services/wiki_service.py` | SPECIFIED |
+| **`REQ-WIKI-003`** | SQLite FTS5 full-text search | `ACCEPT-WIKI-003`  | `SCEN-WIKI-003`  | `TEST-INT-SRCH-01`  | `services/search_service.py`| SPECIFIED |
 | **`REQ-WIKI-004`** | Tag taxonomy extraction | `ACCEPT-WIKI-004`  | `SCEN-WIKI-004`  | `TEST-UNIT-WIKI-02` | `services/wiki_service.py` | SPECIFIED |
-| **`REQ-EXPORT-001`**| Directory tree mirroring | `ACCEPT-EXP-001`   | `SCEN-EXP-002`   | `TEST-UNIT-EXP-01`  | `services/export_service.py`| SPECIFIED |
-| **`REQ-EXPORT-002`**| Asset normalization (`./assets/`)| `ACCEPT-EXP-002` | `SCEN-EXP-001`   | `TEST-UNIT-EXP-02`  | `services/export_service.py`| SPECIFIED |
+| **`REQ-EXPORT-001`**| Directory tree mirroring | `ACCEPT-EXP-001`   | `SCEN-EXP-001`   | `TEST-UNIT-EXP-01`  | `services/export_service.py`| SPECIFIED |
+| **`REQ-EXPORT-002`**| Asset normalization (`./assets/`)| `ACCEPT-EXP-002` | `SCEN-EXP-002`   | `TEST-UNIT-EXP-02`  | `services/export_service.py`| SPECIFIED |
 | **`REQ-EXPORT-003`**| Root `README.md` manifest | `ACCEPT-EXP-003`   | `SCEN-EXP-003`   | `TEST-UNIT-EXP-03`  | `services/export_service.py`| SPECIFIED |
-| **`REQ-UI-001`**   | Workspace / Catalog views | `ACCEPT-UI-001`    | `SCEN-TREE-004`  | `TEST-E2E-UI-01`    | `frontend/src/App.tsx` | SPECIFIED |
-| **`REQ-UI-002`**   | Markdown editor scaffolding | `ACCEPT-UI-002`    | `SCEN-UI-001`    | `TEST-E2E-UI-02`    | `frontend/src/Editor.tsx` | SPECIFIED |
+| **`REQ-UI-001`**   | Workspace / Catalog views | `ACCEPT-UI-001`    | `SCEN-UI-001`    | `TEST-E2E-UI-01`    | `frontend/src/App.tsx` | SPECIFIED |
+| **`REQ-UI-002`**   | Markdown editor scaffolding | `ACCEPT-UI-002`    | `SCEN-UI-002`    | `TEST-E2E-UI-02`    | `frontend/src/Editor.tsx` | SPECIFIED |
 | **`REQ-NF-001`**   | Latency budgets (FTS5 < 50ms)| `ACCEPT-NF-001`   | `SCEN-NF-001`    | `TEST-BENCH-01`     | `core/database.py` | SPECIFIED |
 | **`REQ-NF-002`**   | Zero outbound network calls | `ACCEPT-NF-002`   | `SCEN-NF-002`    | `TEST-INT-SEC-01`   | `main.py` | SPECIFIED |
 | **`REQ-NF-003`**   | CommonMark export portability| `ACCEPT-NF-003`   | `SCEN-NF-003`    | `TEST-INT-EXP-02`   | `services/export_service.py`| SPECIFIED |
 | **`REQ-NF-004`**   | SQLite WAL & state recovery | `ACCEPT-NF-004`   | `SCEN-NF-004`    | `TEST-INT-DB-01`    | `core/database.py` | SPECIFIED |
 | **`REQ-NF-005`**   | Mypy strict & 90% coverage | `ACCEPT-NF-005`   | `SCEN-NF-005`    | `TEST-CI-GATE-01`   | `pyproject.toml` | SPECIFIED |
-| **`REQ-NF-006`**   | Sandboxed path containment | `ACCEPT-NF-006`   | `SCEN-ART-002`   | `TEST-UNIT-SEC-01`  | `services/storage_service.py`| SPECIFIED |
+| **`REQ-NF-006`**   | Sandboxed path containment | `ACCEPT-NF-006`   | `SCEN-NF-006`    | `TEST-UNIT-SEC-01`  | `services/storage_service.py`| SPECIFIED |
 
 ---
 
