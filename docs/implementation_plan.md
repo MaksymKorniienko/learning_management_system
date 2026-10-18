@@ -1,30 +1,188 @@
-# PKLMS Master Implementation Plan & Governance Register
+# PKLMS Master Implementation Plan & Engineering Governance Register
 
-| Parameter | Governance Specification |
+| Parameter | Governance Specification Details |
 | :--- | :--- |
-| **System** | Personal Knowledge & Learning Management System (PKLMS) |
+| **System Name** | Personal Knowledge & Learning Management System (PKLMS) |
+| **Document Type** | Consolidated SDD Implementation Plan, Workflow & Governance Register |
 | **Governing Specification** | [`spec/srs.md`](../spec/srs.md) (v0.2.1-draft) |
-| **Workflow Protocol** | [`docs/workflow.md`](workflow.md) |
 | **Development Discipline** | Specification-Driven Development (SDD) with Mandatory TDD |
 | **Document Target** | `docs/implementation_plan.md` |
 | **Author / Systems Architect** | Lead System Analyst & Architect / Maksym Korniienko (KN-32) |
-| **Status** | Approved Master Implementation Plan (Post-SRS Baseline Approval) |
+| **Status** | Approved Master Engineering Document (Post-SRS Baseline Approval) |
 
 ---
 
-## 1. Executive Summary & Purpose
+## 1. Executive Summary & SDD Governance Invariants
 
-This document operationalizes the approved Software Requirements Specification ([`spec/srs.md`](../spec/srs.md)) into an actionable, verifiable, and traceably bound implementation plan. It establishes:
-1. **Master Traceability Matrix**: Direct 1-to-1 linkage from requirements to tickets, test suites, and production code modules.
-2. **Human vs. Agent Role Division (RACI)**: Formal boundaries ensuring cognitive sovereignty and eliminating unauthorized autonomous code execution.
-3. **Phased WBS & Ticket Schedule**: Breakdown of 58 discrete tickets across five sequential milestones.
-4. **Schedule Representation & Critical Path**: Gantt chart, bottleneck analysis, and separate estimation of human-performed activities.
-5. **Comprehensive Risk Register**: Assessment and mitigation strategies for both traditional software risks and AI coding agent risks.
-6. **Enhanced Oversight Gates Strategy**: Dedicated validation gates for high cost-of-failure architectural components.
+This document is the authoritative, single-source operational plan for PKLMS. It bridges the formal requirements in [`spec/srs.md`](../spec/srs.md) to concrete GitHub Issues, workflows, and automated test pipelines. Development is governed by three non-negotiable invariants:
+1. **Invariant 1.1 (Specification as Single Source of Truth)**: Every capability, data model, validation rule, and error condition MUST be specified in `spec/srs.md` prior to implementation. Unspecified behavior is classified as a defect.
+2. **Invariant 1.2 (Mandatory Test-Driven Development)**: All production code is developed strictly via the TDD Red-Green-Refactor cycle. No production code shall be merged into `main` without automated test coverage ($\ge 90\%$).
+3. **Invariant 1.3 (Unbroken Traceability)**: Every ticket, pull request, and commit must declare its position in the traceability chain:
+   $$\text{Requirement ID (REQ-XXX)} \longrightarrow \text{Acceptance Scenario (SCEN-XXX)} \longrightarrow \text{Test ID (TEST-XXX)} \longrightarrow \text{PR / Commit}$$
 
 ---
 
-## 2. Master Traceability Matrix
+## 2. Workflow State Machine & Definition of Done (DoD)
+
+### 2.1 State Transition Machine
+
+All work items in GitHub Issues and the GitHub Projects board transition through five formal states:
+
+```
+                  ┌──────────────────────────────────────────────┐
+                  │                                              │
+                  ▼                                              │
+ ┌───────────┐         ┌───────────────┐         ┌───────────┐   │
+ │   To Do   │ ──────> │  In Progress  │ ──────> │ In Review │ ──┤
+ └─────┬─────┘         └───────┬───────┘         └─────┬─────┘   │
+       │                       │                       │         │
+       │ (Dependency)          │ (Blocker)             │         │
+       ▼                       ▼                       ▼         │
+ ┌───────────────────────────────────────────────────────────┐   │
+ │                          Blocked                          │   │
+ └───────────────────────────────────────────────────────────┘   │
+                               │ (Blocker resolved)              │
+                               ▼                                 │
+                         (Previous State)                        │
+                                                                 │ (Passed)
+                                                                 ▼
+                                                           ┌───────────┐
+                                                           │   Done    │
+                                                           └───────────┘
+```
+
+### 2.2 Detailed Status Definitions
+
+| Status | SDD Meta-State | Operational Criteria | Entry Condition | Exit / Done Condition |
+| :--- | :--- | :--- | :--- | :--- |
+| **`To Do`** | **Pending** | Ticket is formulated via template, assigned an SDD Type, and linked to `REQ-ID`. Ready for assignment. | Ticket backlog-prioritized. | Assignee starts work; branches from `main`. |
+| **`In Progress`** | **Active** | Active drafting or coding is underway by the designated assignee. | Branch created (`feat/`, `test/`, `spec/`), first commit made. | Work complete; test suites or draft ready; PR opened. |
+| **`In Review`** | **Under Review** | Undergoing quality gates: PR code review, CI test run, coverage calculation, or Gate audit. | PR opened against `main`; CI triggered. | Checks pass ($\ge 90\%$ test coverage), reviews approved, gate signed off. |
+| **`Done`** | **Completed** | Definition of Done is fully met. Work is merged into the `main` branch. | PR merged or Gate artifact accepted. | Ticket closed. |
+| **`Blocked`** | **Suspended** | Work cannot continue due to an external blocker, upstream dependency, or open specification conflict. | Unresolved dependency or conflict flagged. | Blocker removed; returns to `To Do` or `In Progress`. |
+
+### 2.3 Definition of Done (DoD) Checklist
+
+A ticket can only transition to **`Done`** when the following checklist is completely satisfied:
+- [ ] **Traceability**: Linked to corresponding Requirement ID (`REQ-XXX`) in `spec/srs.md`.
+- [ ] **Tests Pass (TDD Green)**: All relevant automated tests pass deterministically.
+- [ ] **Coverage Invariant**: Line and branch coverage for modified modules is $\ge 90\%$.
+- [ ] **Static Quality**: Code passes `ruff` (linter) and `mypy` (strict type checks) with zero errors.
+- [ ] **Documentation**: Any schema, API, or behavioral change is documented in `spec/srs.md` or `docs/`.
+- [ ] **Branch Merged**: PR cleanly merged into `main` with squash or rebase commit.
+
+---
+
+## 3. SDD Ticket Types & Standard Naming
+
+### 3.1 Ticket Type Taxonomy
+
+Every task created in GitHub Issues MUST be assigned exactly one primary SDD Ticket Type:
+
+| # | Type Name | Label | SDD Phase & Responsibility | Deliverable / Output Artifact |
+| :-: | :--- | :--- | :--- | :--- |
+| **1** | **Specification** | `type: specification` | Authoring baseline specifications, domain schemas, API contracts, or DDL definitions before any code is written. | Markdown updates in `spec/srs.md`, data contracts in Pydantic/OpenAPI. |
+| **2** | **Addendum** | `type: addendum` | Formal amendments, deltas, or clarifications to an already approved baseline specification. | Specification delta commit, version increment (e.g., `v0.2.0` $\to$ `v0.2.1`), changelog. |
+| **3** | **Test** | `type: test` | Authoring automated unit, integration, or contract tests *before* production code (TDD Red phase). | Test suites in `tests/unit/` or `tests/integration/` encoding `SCEN-xxx`. |
+| **4** | **Feature** | `type: feature` | Implementing minimal, clean production code to satisfy passing tests (TDD Green phase). | Code modules in `src/backend/app/` or `src/frontend/src/`. |
+| **5** | **Verification** | `type: verification` | *"Did we build the system right?"* Internal technical quality checks: static analysis, type checking (`mypy`), linting (`ruff`), and code coverage ($\ge 90\%$). | Coverage reports (`htmlcov/`), linting logs, static analysis passing. |
+| **6** | **Validation** | `type: validation` | *"Did we build the right system?"* User-centric validation: executing end-to-end BDD scenarios and cognitive sovereignty invariants. | Acceptance test run reports, BDD verification logs, validation checklists. |
+| **7** | **Documentation** | `type: documentation` | Authoring user manuals, API Swagger documentation, deployment guides, or architecture diagrams. | Files in `docs/`, inline docstrings, README updates. |
+| **8** | **Gate** | `type: gate` | Formal milestone checkpoints that block progression until all prerequisite tickets are validated and closed. | Gate audit report (e.g., `logs/spec-audit.md`, `logs/gate-m1.md`). |
+
+### 3.2 Standard Ticket Title Format
+
+```text
+[<TYPE>] [<REQ-ID>]: <Concise Imperative Description>
+```
+
+**Examples**:
+- `[SPEC] [REQ-TREE-001]: Define recursive status roll-up contract and DDL constraints`
+- `[TEST] [REQ-POLICY-002]: Add failing unit tests for RESEARCH note character threshold`
+- `[FEAT] [REQ-POLICY-002]: Implement PolicyService length validator excluding scaffolding`
+- `[VERIF] [MILESTONE-1]: Verify backend test coverage reaches >= 90% and static types pass`
+- `[GATE] [MILESTONE-1]: Audit and sign off Phase 1 Backend Core Implementation`
+
+---
+
+## 4. GitHub Projects Board & Label Taxonomy
+
+### 4.1 Custom Fields Configuration
+
+Under project settings (`...` $\to$ **Settings** $\to$ **Custom fields**) in GitHub Projects (v2):
+
+| Field Name | Field Type | Options / Format | Purpose |
+| :--- | :---: | :--- | :--- |
+| **`Status`** | Single Select | • `To Do` (Gray)<br>• `In Progress` (Blue)<br>• `In Review` (Yellow)<br>• `Done` (Green)<br>• `Blocked` (Red) | Workflow state machine |
+| **`Type`** | Single Select | • `Specification`<br>• `Addendum`<br>• `Test`<br>• `Feature`<br>• `Verification`<br>• `Validation`<br>• `Documentation`<br>• `Gate` | SDD lifecycle classification |
+| **`Req ID`** | Text | e.g., `REQ-TREE-001`, `REQ-POLICY-002` | Unbroken requirement traceability |
+| **`Subsystem`** | Single Select | • `TREE`<br>• `POLICY`<br>• `ARTIFACT`<br>• `WIKI`<br>• `EXPORT`<br>• `UI` | Functional domain partitioning |
+
+### 4.2 Standardized Label Taxonomy (with Tooltip Descriptions)
+
+Every GitHub label contains a description ($\le 100$ characters) that displays as a tooltip upon hover:
+
+| Label Name | Hex Color | Hover Description (Tooltip) | Domain / Category |
+| :--- | :---: | :--- | :--- |
+| `status: todo` | `#cfd3d7` | Pending task; requirements defined; ready to be picked up for development | Workflow Status |
+| `status: in-progress` | `#0969da` | Active implementation, test authoring, or drafting is underway by the assignee | Workflow Status |
+| `status: in-review` | `#d4a72c` | Work completed; awaiting PR review, automated test pass, or quality audit | Workflow Status |
+| `status: blocked` | `#d93f0b` | Work halted due to an unresolved upstream dependency, defect, or spec ambiguity | Workflow Status |
+| `status: done` | `#2da44e` | All acceptance criteria satisfied; tests passing; merged to main branch | Workflow Status |
+| `type: specification` | `#1d76db` | Baseline system specification, domain schema, or API contract authored in SRS | SDD Type |
+| `type: addendum` | `#5319e7` | Formal amendment, delta, or clarification to an approved baseline specification | SDD Type |
+| `type: test` | `#e99695` | Automated unit, integration, or contract test asserting expected failure (TDD Red) | SDD Type |
+| `type: feature` | `#006b75` | Production code implementation satisfying passing test contracts (TDD Green) | SDD Type |
+| `type: verification` | `#fbca04` | Internal technical quality check: static types, linting, test coverage (>= 90%) | SDD Type |
+| `type: validation` | `#bfdadc` | User-centric acceptance: BDD scenarios, user journeys, cognitive invariants | SDD Type |
+| `type: documentation` | `#0075ca` | User manuals, API Swagger schemas, README guides, and architecture documentation | SDD Type |
+| `type: gate` | `#b60205` | Formal blocking milestone checkpoint verifying prerequisite tickets before merge | SDD Type |
+| `domain: tree` | `#c2e0c6` | Goal/Module/Task hierarchy, leaf invariants, and status roll-up logic | Subsystem |
+| `domain: policy` | `#fef2c0` | Task completion policies (READING, RESEARCH, PRACTICE, PROJECT/LAB) | Subsystem |
+| `domain: artifact` | `#bfd4f2` | Artifact vault storage, MIME verification, size bounds, guarded deletion | Subsystem |
+| `domain: wiki` | `#d4c5f9` | Bidirectional wikilinks, auto-refactoring, and SQLite FTS5 search | Subsystem |
+| `domain: export` | `#f9d0c4` | Portability engine, directory tree mirroring, and README manifest | Subsystem |
+| `domain: ui` | `#e6cbf2` | React SPA, Workspace Mode, Knowledge Catalog Mode, and Markdown editor | Subsystem |
+
+### 4.3 GitHub Projects Board Readme Content
+
+To display definitions directly on the board, paste this markdown into the **📖 Readme** panel of your GitHub Project:
+
+```markdown
+# 🏛️ PKLMS SDD Project Execution Hub
+Governed under **Specification-Driven Development (SDD)** with mandatory **TDD**.
+- **Approved SRS (Source of Truth)**: [`spec/srs.md`](https://github.com/MaksymKorniienko/learning_management_system/blob/main/spec/srs.md)
+- **Master Plan & Governance**: [`docs/implementation_plan.md`](https://github.com/MaksymKorniienko/learning_management_system/blob/main/docs/implementation_plan.md)
+
+### 🚦 Statuses: To Do | In Progress | In Review | Blocked | Done
+### 🏷️ SDD Types: SPEC | ADD | TEST | FEAT | VERIF | VALID | DOC | GATE
+### 🔗 Traceability Invariant: REQ-XXX ➔ SCEN-XXX ➔ TEST-XXX ➔ FEAT ➔ GATE
+```
+
+---
+
+## 5. Human vs. Agent Role Division (RACI Matrix)
+
+To preserve cognitive sovereignty and prevent AI autonomy errors, responsibilities are strictly apportioned:
+- **Responsible (R)**: The actor who authors and executes the deliverable.
+- **Accountable (A)**: The sole entity with sign-off authority and final veto power.
+- **Consulted (C)**: The actor providing context, RFC feedback, or technical constraints.
+- **Informed (I)**: The actor kept updated on progress and state transitions.
+
+| SDD Lifecycle Stage / Task Type | 👤 Human Expert (Student) | 🤖 Coding Agent (AI) | Non-Delegable Boundary / Rationale |
+| :--- | :---: | :---: | :--- |
+| **Overall System Vision & Problem Framing** | **Accountable & Responsible** | Informed | Core educational philosophy and cognitive boundaries cannot be delegated. |
+| **Baseline Specification Approval (`SPEC`)** | **Accountable & Responsible** | Consulted | Specification is the legal single source of truth. |
+| **Specification Amendments (`ADD`)** | **Accountable** | **Responsible** (Drafts RFC) | Human identifies edge case; Agent drafts formal RFC diff; Human approves. |
+| **TDD Red: Test Suite Authoring (`TEST`)** | **Accountable** (Reviews assertions) | **Responsible** (Codes tests) | Agent writes parameterized tests; Human validates that tests assert true failure. |
+| **TDD Green: Code Implementation (`FEAT`)** | Informed / Reviewer | **Responsible** | High-speed technical synthesis of minimal typed code satisfying tests. |
+| **Static Verification & CI Checks (`VERIF`)**| Informed | **Responsible** | Fully automatable execution of `pytest`, `mypy`, and `ruff`. |
+| **Stage-Gate Milestones (`GATE`)** | **Accountable & Responsible (Veto)**| Blocked from signing off | **Gate decisions CANNOT be delegated to the agent** under any circumstances. |
+| **End-to-End User Validation (`VALID`)** | **Accountable & Responsible** (UX) | Consulted (Runs E2E) | Real-world cognitive friction and usability can only be felt by a human learner. |
+
+---
+
+## 6. Master Traceability Matrix
 
 Every requirement from `spec/srs.md` is bound to its BDD acceptance scenario, automated test ID, planned target module, and implementation tickets.
 
@@ -61,29 +219,7 @@ Every requirement from `spec/srs.md` is bound to its BDD acceptance scenario, au
 
 ---
 
-## 3. Human vs. Agent Role Division (RACI Matrix)
-
-To preserve cognitive sovereignty and avoid AI autonomy pathologies, responsibilities are strictly apportioned:
-
-- **Responsible (R)**: The actor who authors and executes the deliverable.
-- **Accountable (A)**: The sole entity with sign-off authority and final veto power.
-- **Consulted (C)**: The actor providing context, RFC feedback, or technical constraints.
-- **Informed (I)**: The actor kept updated on progress and state transitions.
-
-| SDD Lifecycle Stage / Task Type | 👤 Human Expert (Student) | 🤖 Coding Agent (AI) | Non-Delegable Boundary / Rationale |
-| :--- | :---: | :---: | :--- |
-| **Overall System Vision & Problem Framing** | **Accountable & Responsible** | Informed | Core educational philosophy and cognitive boundaries cannot be delegated. |
-| **Baseline Specification Approval (`SPEC`)** | **Accountable & Responsible** | Consulted | Specification is the legal single source of truth. |
-| **Specification Amendments (`ADD`)** | **Accountable** | **Responsible** (Drafts RFC) | Human identifies edge case; Agent drafts formal RFC diff; Human approves. |
-| **TDD Red: Test Suite Authoring (`TEST`)** | **Accountable** (Reviews assertions) | **Responsible** (Codes tests) | Agent writes parameterized tests; Human validates that tests assert true failure. |
-| **TDD Green: Code Implementation (`FEAT`)** | Informed / Reviewer | **Responsible** | High-speed technical synthesis of minimal typed code satisfying tests. |
-| **Static Verification & CI Checks (`VERIF`)**| Informed | **Responsible** | Fully automatable execution of `pytest`, `mypy`, and `ruff`. |
-| **Stage-Gate Milestones (`GATE`)** | **Accountable & Responsible (Veto)**| Blocked from signing off | **Gate decisions CANNOT be delegated to the agent** under any circumstances. |
-| **End-to-End User Validation (`VALID`)** | **Accountable & Responsible** (UX) | Consulted (Runs E2E) | Real-world cognitive friction and usability can only be felt by a human learner. |
-
----
-
-## 4. Phased Implementation Plan & Work Breakdown Structure (WBS)
+## 7. Phased Implementation Plan & Work Breakdown Structure (WBS)
 
 ### Milestone 1: Project Scaffold, Database Foundation & CI Quality Gates (M1)
 - **Objective**: Establish production repository layout, configuration management, SQLite WAL database session, and automated quality pipelines.
@@ -96,8 +232,6 @@ To preserve cognitive sovereignty and avoid AI autonomy pathologies, responsibil
 | `PKLMS-03` | `FEAT` | `PKLMS-02` | `PKLMS-04` | Implement `core/database.py`, `core/config.py`, and storage directory roots | 1.0 h | 0.2 h |
 | `PKLMS-04` | `VERIF`| `PKLMS-03` | `PKLMS-05` | Verify CI gates: `pytest`, `mypy --strict`, and `ruff` pass cleanly | 0.5 h | 0.2 h |
 | `PKLMS-05` | `GATE` | `PKLMS-01..04`| M2 Tickets | **Gate M1 Audit**: Sign off foundational infrastructure and authorize M2 start | 0.0 h | **0.3 h** |
-
----
 
 ### Milestone 2: Tree Decomposition Engine & Deterministic Roll-up (M2)
 - **Objective**: Deliver Goal/Node relational models, strict leaf task invariants, nesting bounds, and recursive bottom-up progress calculation.
@@ -117,8 +251,6 @@ To preserve cognitive sovereignty and avoid AI autonomy pathologies, responsibil
 | `PKLMS-15` | `FEAT` | `PKLMS-14` | `PKLMS-16` | Implement Catalog Mode transition event and API state serializer | 0.4 h | 0.1 h |
 | `PKLMS-16` | `VERIF`| `PKLMS-15` | `PKLMS-17` | Tree Engine test coverage $\ge 90\%$ and benchmark latency $\le 15\text{ ms}$ | 0.4 h | 0.2 h |
 | `PKLMS-17` | `GATE` | `PKLMS-06..16`| M3 & M4 | **Gate M2 Audit**: Verify tree invariants and roll-up algorithm mathematically | 0.0 h | **0.4 h** |
-
----
 
 ### Milestone 3: Task Policy Engine & Multi-Modal Artifact Vault (M3)
 - **Objective**: Implement completion policies (`READING`, `RESEARCH`, `PRACTICE`, `PROJECT/LAB`), file storage sanitization, MIME filters, and guarded deletion.
@@ -144,8 +276,6 @@ To preserve cognitive sovereignty and avoid AI autonomy pathologies, responsibil
 | `PKLMS-32` | `VERIF`| `PKLMS-31` | `PKLMS-33` | Policy & Storage test coverage $\ge 90\%$; verify 0 path leakage defects | 0.4 h | 0.2 h |
 | `PKLMS-33` | `GATE` | `PKLMS-18..32`| M5 UI Tasks | **Gate M3 Audit**: Verify policy invariants and security containment | 0.0 h | **0.5 h** |
 
----
-
 ### Milestone 4: Knowledge Vault, Bidirectional Wikilinks & SQLite FTS5 Search (M4)
 - **Objective**: Implement wikilink parsing, 4-step scoped resolution, transactional link refactoring on node rename, tag taxonomy, and SQLite FTS5 lexical search.
 - **Estimated Duration**: **8.0 h** (Agent: 5.5 h, Human: 2.5 h)
@@ -162,8 +292,6 @@ To preserve cognitive sovereignty and avoid AI autonomy pathologies, responsibil
 | `PKLMS-41` | `FEAT` | `PKLMS-40` | `PKLMS-42` | Implement tag extraction and faceted filter router | 0.5 h | 0.1 h |
 | `PKLMS-42` | `VERIF`| `PKLMS-41` | `PKLMS-43` | Vault test coverage $\ge 90\%$; verify FTS5 latency benchmark $\le 50\text{ ms}$ | 0.4 h | 0.2 h |
 | `PKLMS-43` | `GATE` | `PKLMS-34..42`| M5 UI/Export| **Gate M4 Audit**: Audit wikilink refactoring safety and search latency | 0.0 h | **0.5 h** |
-
----
 
 ### Milestone 5: Web UI, Export Engine & Final System Validation (M5)
 - **Objective**: Deliver React 18 SPA (Workspace & Catalog modes), embedded Markdown editor with scaffolding, CommonMark export engine, and end-to-end BDD validation.
@@ -188,16 +316,16 @@ To preserve cognitive sovereignty and avoid AI autonomy pathologies, responsibil
 
 ---
 
-## 5. Schedule Representation (Gantt Chart & Day-Based Timeline)
+## 8. Schedule Representation (Gantt Chart & 20-Day Timeline)
 
-### 5.1 Timeline Rationale & Daily Workload Model
+### 8.1 Timeline Rationale & Daily Workload Model
 
 > [!NOTE]
 > **Why a 20-Day Timeline?**  
 > The implementation plan is structured across a **20-day delivery timeline** (corresponding to a 4-week academic sprint at 5 working days per week). This models a realistic part-time university laboratory schedule where the human engineer balances coursework and cognitive capacity rather than attempting an unsustainable monolithic 8-hour coding sprint.
 
 #### Workload & Daily Output Parameters:
-- **Total Project Effort**: **37.0 hours** (see Section 6.2).
+- **Total Project Effort**: **37.0 hours** (see Section 9).
   - 🤖 **Coding Agent Effort**: **24.0 hours** (64.9%)
   - 👤 **Human Governance & Review**: **13.0 hours** (35.1%)
 - **Standard Daily Workload**: **~1.85 hours / day** ($37.0\text{ hours} \div 20\text{ days}$).
@@ -207,9 +335,7 @@ To preserve cognitive sovereignty and avoid AI autonomy pathologies, responsibil
   - *Standard Day*: Delivery of 1 complete TDD cycle (1 `TEST` ticket authored & failing + 1 `FEAT` ticket passing).
   - *Gate Days (Days 3, 7, 11, 15, 20)*: Execution of 1 `VERIF` suite + 1 `GATE` audit sign-off.
 
----
-
-### 5.2 Mermaid Gantt Chart
+### 8.2 Mermaid Gantt Chart
 
 The schedule depicts **key stages, dependencies, and blocking milestones** without micro-level ticket fragmentation. The X-axis marks sequential project days (`Day 01` to `Day 20`).
 
@@ -224,7 +350,6 @@ gantt
     Architecture & SQLite WAL (PKLMS-01..03)      :m1_core, 2026-01-01, 2026-01-02
     CI Quality Gates (PKLMS-04)                   :m1_ci, 2026-01-02, 2026-01-03
     Gate M1 Sign-off [Human] (PKLMS-05)           :milestone, m1_gate, 2026-01-03, 0d
-
 
     section M2: Tree Engine
     Tree Models & Leaf Rules (PKLMS-06..11)       :m2_tree, 2026-01-03, 2026-01-05
@@ -255,7 +380,7 @@ gantt
     Gate M5 Release Sign-off [Human] (PKLMS-57)   :milestone, m5_gate, 2026-01-20, 0d
 ```
 
-### 5.3 Sequential Milestone Timeline Mapping
+### 8.3 Sequential Milestone Timeline Mapping
 
 | Timeline Window | Milestone Stage | Key Deliverables & Activities | Dependencies / Preconditions | Primary Gate |
 | :---: | :--- | :--- | :--- | :---: |
@@ -265,12 +390,11 @@ gantt
 | **Day 11 – Day 15** | **M4: Vault & FTS5** | Scoped wikilinks, transactional refactoring, SQLite FTS5 search | Passed Gate M2 | **Gate M4** (Day 15) |
 | **Day 15 – Day 20** | **M5: UI & Release** | React SPA, Markdown editor, export engine, E2E validation | Passed Gates M3 & M4 | **Gate M5** (Day 20) |
 
-
 ---
 
-## 6. Critical Path & Human Bottleneck Analysis
+## 9. Critical Path & Human Bottleneck Analysis
 
-### 6.1 Critical Path Determination
+### 9.1 Critical Path Determination
 
 The **Critical Path** represents the sequence of dependent activities having zero scheduling float, where any delay directly impacts the final release date:
 
@@ -279,7 +403,7 @@ $$\mathbf{M1\text{ (Foundation)}} \xrightarrow{\text{Gate M1}} \mathbf{M2\text{ 
 - **Why M3 is on the Critical Path over M4**: The React SPA Workspace mode relies directly on policy validation endpoints, multipart file upload endpoints, and guarded deletion rollbacks (`M3`). While knowledge search and wikilinks (`M4`) can progress partially in parallel with M3, the frontend cannot execute its core user workflow without M3.
 - **Total Critical Path Duration**: **29.0 h** of direct serial dependencies.
 
-### 6.2 Human Throughput Bottleneck Accounting
+### 9.2 Human Throughput Bottleneck Accounting
 
 | Metric Category | Total Effort (Hours) | Percentage of Project Duration | Primary Activity |
 | :--- | :---: | :---: | :--- |
@@ -291,9 +415,9 @@ $$\mathbf{M1\text{ (Foundation)}} \xrightarrow{\text{Gate M1}} \mathbf{M2\text{ 
 
 ---
 
-## 7. Comprehensive Risk Register
+## 10. Comprehensive Risk Register
 
-### 7.1 Traditional Software Engineering Risks
+### 10.1 Traditional Software Engineering Risks
 
 | Risk ID | Category | Manifestation | Potential Consequences | Detection Method | Preventive & Mitigation Measure | Criticality |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: |
@@ -302,20 +426,20 @@ $$\mathbf{M1\text{ (Foundation)}} \xrightarrow{\text{Gate M1}} \mathbf{M2\text{ 
 | **`TR-03`** | **Storage** | User deletes an artifact file directly from `/storage/artifacts/` using OS file explorer. | Dangling database pointers; 404/500 errors when attempting download or export. | Periodic filesystem reconciliation check (`TreeService.check_storage_integrity()`). | Self-healing fallback: missing files render as *"Missing Artifact"* warning; status rollback prompt. | **MEDIUM** |
 | **`TR-04`** | **Frontend** | Complex nested tree state management causing sluggishness during drag-and-drop reordering. | Poor user experience; UI freezes on large curricula (>100 nodes). | Component render profiling; React DevTools benchmarking. | Keep tree state normalized; utilize memoized recursive tree nodes (`React.memo`) and virtualized rendering. | **LOW** |
 
-### 7.2 AI Coding Agent Specific Risks
+### 10.2 AI Coding Agent Specific Risks
 
 | Risk ID | Category | Manifestation | Potential Consequences | Detection Method | Preventive & Mitigation Measure | Criticality |
 | :--- | :---: | :--- | :--- | :--- | :--- | :---: |
 | **`AI-01`** | **Requirement Misinterpretation** | Agent assumes standard todo-list semantics, permitting direct leaf tasks inside container modules that have sub-modules. | Silent violation of Invariant 6.2 (Strict Leaf Tasks) and corruption of the tree model. | Automated unit tests asserting HTTP 422 on mixed-container insertion (`SCEN-TREE-002`). | Explicit prompt references to Invariant 6.2; human verification checklist at **Gate M2**. | **CRITICAL** |
 | **`AI-02`** | **Code/Test Error Correlation ("Shared Delusion")** | The agent authors both the test and the code with the same mistaken assumption (e.g., counting scaffolding characters toward the 100-character threshold). | Tests pass Green with 100% coverage, yet the actual system violates SRS §7.2. | Human inspection of test assertions during TDD Red phase; adversarial human test cases. | **Mandatory Two-Step TDD**: Human must review and approve `TEST` assertions before authorizing `FEAT` implementation. | **CRITICAL** |
 | **`AI-03`** | **Non-Deterministic Refactoring & Regression** | Agent modifies working service code during later milestones (e.g., modifying `TreeService` while implementing `WikiService`), introducing subtle regressions. | Previously passing tests fail; broken API contracts. | Automated regression test run (`pytest tests/`) prior to every git commit. | Strictly pinned test baseline; git pre-commit hook preventing commits if test count drops or fails. | **HIGH** |
-| **`AI-04`** | **Context Obsolescence & Hallucination** | In long sessions, the agent loses track of foundational decisions (e.g., forgetting that `goals` is decoupled from `nodes`). | Contract drift; reintroducing deprecated database columns or schemas. | Strict Pydantic contract validation tests; schema comparison against SRS §10. | Grounding in persistent repository documents (`spec/srs.md`, `docs/workflow.md`); referencing exact file paths. | **HIGH** |
+| **`AI-04`** | **Context Obsolescence & Hallucination** | In long sessions, the agent loses track of foundational decisions (e.g., forgetting that `goals` is decoupled from `nodes`). | Contract drift; reintroducing deprecated database columns or schemas. | Strict Pydantic contract validation tests; schema comparison against SRS §10. | Grounding in persistent repository documents (`spec/srs.md`); referencing exact file paths. | **HIGH** |
 | **`AI-05`** | **Tooling & File Operation Defects** | Agent runs regex replacement on full files or misinterprets Windows PowerShell paths, corrupting markdown files or source files. | Syntax errors, deleted comments, corrupted specifications. | Git diff review (`git diff`) before every commit; git working tree status check. | Enforcing iterative human review: *"Propose solution, wait for verdict before writing/executing"*. | **MEDIUM** |
-| **`AI-06`** | **Insufficient Human Oversight (Rubber-Stamping)** | Human approves PRs, gates, or code changes rapidly without verifying test logs, relying entirely on agent confidence. | Flawed architecture merged to `main`; quality gate failure discovered late. | Quantitative gate audit reports (`logs/gate-mX.md`) requiring pasted execution logs and metrics. | Non-delegable human responsibility for all `GATE` tickets; minimum human review time budget (§6.2). | **CRITICAL** |
+| **`AI-06`** | **Insufficient Human Oversight (Rubber-Stamping)** | Human approves PRs, gates, or code changes rapidly without verifying test logs, relying entirely on agent confidence. | Flawed architecture merged to `main`; quality gate failure discovered late. | Quantitative gate audit reports (`logs/gate-mX.md`) requiring pasted execution logs and metrics. | Non-delegable human responsibility for all `GATE` tickets; minimum human review time budget (§8.1). | **CRITICAL** |
 
 ---
 
-## 8. Enhanced Oversight Gates Strategy
+## 11. Enhanced Oversight Gates Strategy
 
 Components with an exceptionally **high cost of failure** are governed by mandatory, blocking verification gates:
 

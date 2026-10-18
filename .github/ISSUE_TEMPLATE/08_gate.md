@@ -8,7 +8,7 @@ assignees: ""
 
 ### 1. Gate Scope & Target Milestone
 - **Milestone Name**: (e.g., Spec Approval Gate, Milestone 1 Implementation Gate, Release Gate)
-- **Governing Protocol**: `docs/workflow.md#section-3`
+- **Governing Protocol**: `docs/implementation_plan.md#2-workflow-state-machine--definition-of-done-dod`
 - **Gate Protocol Artifact**: `logs/gate-...md`
 
 ### 2. Upstream Prerequisite Tickets
