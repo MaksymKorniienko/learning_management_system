@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: SDD Workflow & Governance Guide
+    url: https://github.com/MaksymKorniienko/learning_management_system/blob/main/docs/workflow.md
+    about: Read the official SDD lifecycle, status definitions, and ticket type definitions.
+  - name: Approved Baseline SRS (Single Source of Truth)
+    url: https://github.com/MaksymKorniienko/learning_management_system/blob/main/spec/srs.md
+    about: Reference formal requirement IDs (REQ-XXX) and BDD acceptance criteria.
