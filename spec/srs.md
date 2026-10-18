@@ -9,13 +9,22 @@
 | :--- | :--- |
 | **System Name** | Personal Knowledge & Learning Management System (PKLMS) |
 | **Document Type** | Software Requirements Specification (SRS) / SDD Core Artifact |
-| **Document Version** | 0.2.0-draft |
-| **Status** | Approved Baseline Specification (Pre-implementation Milestone 1) |
+| **Document Version** | 0.2.1-draft |
+| **Status** | Amended Baseline Specification (Pre-implementation Milestone 1) |
 | **Development Discipline** | Specification-Driven Development (SDD) with Mandatory TDD |
 | **Author / Systems Architect** | Lead System Analyst & Architect / Maksym Korniienko (KN-32) |
 | **Academic Affiliation** | Department of System Design, ESC "IASA", Igor Sikorsky Kyiv Polytechnic Institute |
 | **Target Runtime Environment** | Debian 12 / Ubuntu 22.04+ / Windows 11 (Python 3.11+ Runtime) |
 | **Repository Location** | `spec/srs.md` |
+
+#### Document Revision History
+
+| Version | Date | Author / Role | Description of Changes / Formal Gates |
+| :---: | :---: | :--- | :--- |
+| `0.1.0-draft` | Sep 18, 2026 | M. Korniienko (Lead Architect) | Initial baseline specification draft submitted for quality audit. |
+| `0.2.0-draft` | Sep 24, 2026 | M. Korniienko (Lead Architect) | Remediated 8 audit defects (Goal/Node decoupling, BDD synchronization, Pydantic contracts, FTS5 sync). Approved Baseline (SPEC-GATE PASS). |
+| `0.2.1-draft` | Oct 18, 2026 | M. Korniienko (Lead Architect) | Formally incorporated Addendum **ADD-001 (PKLMS-ADD-01)**: Extended PROJECT/LAB policy (`REQ-POLICY-004`) to support external project links; synchronized implementation ticket IDs in Section 14.4 Traceability Matrix. |
+
 
 ---
 
@@ -103,6 +112,9 @@ Upon goal completion, PKLMS preserves the full hierarchical structure as an inte
   - [16.1 Phase Breakdown & Milestone Schedule](#161-phase-breakdown--milestone-schedule)
   - [16.2 Risk Assessment & Mitigations](#162-risk-assessment--mitigations)
   - [16.3 Phase 2 Roadmap (Post-MVP Evolution)](#163-phase-2-roadmap-post-mvp-evolution)
+- [17. Addenda & Formal Amendments (SDD Delta Log)](#17-addenda--formal-amendments-sdd-delta-log)
+  - [17.1 ADD-001 (PKLMS-ADD-01): PROJECT/LAB External Link Support](#171-add-001-pklms-add-01-projectlab-external-link-support)
+
 
 ---
 
@@ -1076,38 +1088,39 @@ The PKLMS Phase 1 MVP is formally declared **DONE** when and only when all of th
 5. This SRS specification is fully synchronized with the implementation without unresolved deviations.
 
 #### 14.4 Initial Traceability Matrix
-In accordance with SDD governance (Invariant 4.3), the initial traceability matrix binds each formal Requirement ID to its observable Acceptance Criterion, BDD Scenario, and planned verification targets:
+In accordance with SDD governance (Invariant 4.3), this matrix binds each formal Requirement ID to its observable Acceptance Criterion, BDD Scenario, planned test verification targets, and active implementation tickets. The authoritative implementation schedule and WBS are maintained in [`docs/implementation_plan.md`](../docs/implementation_plan.md).
 
-| Requirement ID | Requirement Summary | Acceptance Criterion ID | BDD Scenario ID | Planned Test ID | Planned Target Module | Implementation Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
-| **`REQ-TREE-001`** | Recursive Goal/Module/Task CRUD | `ACCEPT-TREE-001` | `SCEN-TREE-001` | `TEST-UNIT-TREE-01` | `services/tree_service.py` | SPECIFIED |
-| **`REQ-TREE-002`** | Strict leaf task constraint | `ACCEPT-TREE-002` | `SCEN-TREE-002` | `TEST-UNIT-TREE-02` | `models/node.py` | SPECIFIED |
-| **`REQ-TREE-003`** | Max nesting depth $\le 5$ | `ACCEPT-TREE-003` | `SCEN-TREE-003` | `TEST-UNIT-TREE-03` | `services/tree_service.py` | SPECIFIED |
-| **`REQ-TREE-004`** | Deterministic status roll-up | `ACCEPT-TREE-004` | `SCEN-TREE-004` | `TEST-UNIT-TREE-04` | `services/tree_service.py` | SPECIFIED |
-| **`REQ-TREE-005`** | Catalog mode on 100% progress | `ACCEPT-TREE-005` | `SCEN-TREE-005` | `TEST-INT-TREE-01`  | `api/routers/goals.py` | SPECIFIED |
-| **`REQ-POLICY-001`**| READING acknowledgment | `ACCEPT-POLICY-001`| `SCEN-POLICY-001`| `TEST-UNIT-POL-01`  | `services/policy_service.py`| SPECIFIED |
-| **`REQ-POLICY-002`**| RESEARCH $>100$ char note | `ACCEPT-POLICY-002`| `SCEN-POLICY-002`| `TEST-UNIT-POL-02`  | `services/policy_service.py`| SPECIFIED |
-| **`REQ-POLICY-003`**| PRACTICE code / git URL | `ACCEPT-POLICY-003`| `SCEN-POLICY-003`| `TEST-UNIT-POL-03`  | `services/policy_service.py`| SPECIFIED |
-| **`REQ-POLICY-004`**| PROJECT report / archive | `ACCEPT-POLICY-004`| `SCEN-POLICY-004`| `TEST-UNIT-POL-04`  | `services/policy_service.py`| SPECIFIED |
-| **`REQ-POLICY-005`**| Soft warning on short edit | `ACCEPT-POLICY-005`| `SCEN-POLICY-005`| `TEST-INT-POL-01`   | `api/routers/tasks.py` | SPECIFIED |
-| **`REQ-ARTIFACT-001`**| Path sanitization & sandbox | `ACCEPT-ART-001`   | `SCEN-ART-001`   | `TEST-UNIT-ART-01`  | `services/storage_service.py`| SPECIFIED |
-| **`REQ-ARTIFACT-002`**| MIME type whitelist enforcement | `ACCEPT-ART-002`   | `SCEN-ART-002`   | `TEST-UNIT-ART-02`  | `services/storage_service.py`| SPECIFIED |
-| **`REQ-ARTIFACT-003`**| Guarded deletion & rollback | `ACCEPT-ART-003`   | `SCEN-ART-003`   | `TEST-INT-ART-01`   | `api/routers/artifacts.py` | SPECIFIED |
-| **`REQ-WIKI-001`** | Wikilink parsing & resolution | `ACCEPT-WIKI-001`  | `SCEN-WIKI-001`  | `TEST-UNIT-WIKI-01` | `services/wiki_service.py` | SPECIFIED |
-| **`REQ-WIKI-002`** | Transactional link refactoring| `ACCEPT-WIKI-002`  | `SCEN-WIKI-002`  | `TEST-INT-WIKI-01`  | `services/wiki_service.py` | SPECIFIED |
-| **`REQ-WIKI-003`** | SQLite FTS5 full-text search | `ACCEPT-WIKI-003`  | `SCEN-WIKI-003`  | `TEST-INT-SRCH-01`  | `services/search_service.py`| SPECIFIED |
-| **`REQ-WIKI-004`** | Tag taxonomy extraction | `ACCEPT-WIKI-004`  | `SCEN-WIKI-004`  | `TEST-UNIT-WIKI-02` | `services/wiki_service.py` | SPECIFIED |
-| **`REQ-EXPORT-001`**| Directory tree mirroring | `ACCEPT-EXP-001`   | `SCEN-EXP-001`   | `TEST-UNIT-EXP-01`  | `services/export_service.py`| SPECIFIED |
-| **`REQ-EXPORT-002`**| Asset normalization (`./assets/`)| `ACCEPT-EXP-002` | `SCEN-EXP-002`   | `TEST-UNIT-EXP-02`  | `services/export_service.py`| SPECIFIED |
-| **`REQ-EXPORT-003`**| Root `README.md` manifest | `ACCEPT-EXP-003`   | `SCEN-EXP-003`   | `TEST-UNIT-EXP-03`  | `services/export_service.py`| SPECIFIED |
-| **`REQ-UI-001`**   | Workspace / Catalog views | `ACCEPT-UI-001`    | `SCEN-UI-001`    | `TEST-E2E-UI-01`    | `frontend/src/App.tsx` | SPECIFIED |
-| **`REQ-UI-002`**   | Markdown editor scaffolding | `ACCEPT-UI-002`    | `SCEN-UI-002`    | `TEST-E2E-UI-02`    | `frontend/src/Editor.tsx` | SPECIFIED |
-| **`REQ-NF-001`**   | Latency budgets (FTS5 < 50ms)| `ACCEPT-NF-001`   | `SCEN-NF-001`    | `TEST-BENCH-01`     | `core/database.py` | SPECIFIED |
-| **`REQ-NF-002`**   | Zero outbound network calls | `ACCEPT-NF-002`   | `SCEN-NF-002`    | `TEST-INT-SEC-01`   | `main.py` | SPECIFIED |
-| **`REQ-NF-003`**   | CommonMark export portability| `ACCEPT-NF-003`   | `SCEN-NF-003`    | `TEST-INT-EXP-02`   | `services/export_service.py`| SPECIFIED |
-| **`REQ-NF-004`**   | SQLite WAL & state recovery | `ACCEPT-NF-004`   | `SCEN-NF-004`    | `TEST-INT-DB-01`    | `core/database.py` | SPECIFIED |
-| **`REQ-NF-005`**   | Mypy strict & 90% coverage | `ACCEPT-NF-005`   | `SCEN-NF-005`    | `TEST-CI-GATE-01`   | `pyproject.toml` | SPECIFIED |
-| **`REQ-NF-006`**   | Sandboxed path containment | `ACCEPT-NF-006`   | `SCEN-NF-006`    | `TEST-UNIT-SEC-01`  | `services/storage_service.py`| SPECIFIED |
+| Requirement ID | Requirement Summary | Acceptance Criterion ID | BDD Scenario ID | Planned Test ID | Planned Target Module | Assigned Ticket(s) | Implementation Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: | :---: |
+| **`REQ-TREE-001`** | Recursive Goal/Module/Task CRUD | `ACCEPT-TREE-001` | `SCEN-TREE-001` | `TEST-UNIT-TREE-01` | `services/tree_service.py` | `PKLMS-06`, `07` | SPECIFIED |
+| **`REQ-TREE-002`** | Strict leaf task constraint | `ACCEPT-TREE-002` | `SCEN-TREE-002` | `TEST-UNIT-TREE-02` | `models/node.py` | `PKLMS-08`, `09` | SPECIFIED |
+| **`REQ-TREE-003`** | Max nesting depth $\le 5$ | `ACCEPT-TREE-003` | `SCEN-TREE-003` | `TEST-UNIT-TREE-03` | `services/tree_service.py` | `PKLMS-10`, `11` | SPECIFIED |
+| **`REQ-TREE-004`** | Deterministic status roll-up | `ACCEPT-TREE-004` | `SCEN-TREE-004` | `TEST-UNIT-TREE-04` | `services/tree_service.py` | `PKLMS-12`, `13` | SPECIFIED |
+| **`REQ-TREE-005`** | Catalog mode on 100% progress | `ACCEPT-TREE-005` | `SCEN-TREE-005` | `TEST-INT-TREE-01`  | `api/routers/goals.py` | `PKLMS-14`, `15` | SPECIFIED |
+| **`REQ-POLICY-001`**| READING acknowledgment | `ACCEPT-POLICY-001`| `SCEN-POLICY-001`| `TEST-UNIT-POL-01`  | `services/policy_service.py`| `PKLMS-18`, `19` | SPECIFIED |
+| **`REQ-POLICY-002`**| RESEARCH $>100$ char note | `ACCEPT-POLICY-002`| `SCEN-POLICY-002`| `TEST-UNIT-POL-02`  | `services/policy_service.py`| `PKLMS-20`, `21` | SPECIFIED |
+| **`REQ-POLICY-003`**| PRACTICE code / git URL | `ACCEPT-POLICY-003`| `SCEN-POLICY-003`| `TEST-UNIT-POL-03`  | `services/policy_service.py`| `PKLMS-22`, `23` | SPECIFIED |
+| **`REQ-POLICY-004`**| PROJECT report / external URL | `ACCEPT-POLICY-004`| `SCEN-POLICY-004`| `TEST-UNIT-POL-04`  | `services/policy_service.py`| `PKLMS-ADD-01`, `24`, `25` | AMENDED (`ADD-001`) |
+| **`REQ-POLICY-005`**| Soft warning on short edit | `ACCEPT-POLICY-005`| `SCEN-POLICY-005`| `TEST-INT-POL-01`   | `api/routers/tasks.py` | `PKLMS-26`, `27` | SPECIFIED |
+| **`REQ-ARTIFACT-001`**| Path sanitization & sandbox | `ACCEPT-ART-001`   | `SCEN-ART-001`   | `TEST-UNIT-ART-01`  | `services/storage_service.py`| `PKLMS-28`, `29` | SPECIFIED |
+| **`REQ-ARTIFACT-002`**| MIME type whitelist enforcement | `ACCEPT-ART-002`   | `SCEN-ART-002`   | `TEST-UNIT-ART-02`  | `services/storage_service.py`| `PKLMS-28`, `29` | SPECIFIED |
+| **`REQ-ARTIFACT-003`**| Guarded deletion & rollback | `ACCEPT-ART-003`   | `SCEN-ART-003`   | `TEST-INT-ART-01`   | `api/routers/artifacts.py` | `PKLMS-30`, `31` | SPECIFIED |
+| **`REQ-WIKI-001`** | Wikilink parsing & resolution | `ACCEPT-WIKI-001`  | `SCEN-WIKI-001`  | `TEST-UNIT-WIKI-01` | `services/wiki_service.py` | `PKLMS-34`, `35` | SPECIFIED |
+| **`REQ-WIKI-002`** | Transactional link refactoring| `ACCEPT-WIKI-002`  | `SCEN-WIKI-002`  | `TEST-INT-WIKI-01`  | `services/wiki_service.py` | `PKLMS-36`, `37` | SPECIFIED |
+| **`REQ-WIKI-003`** | SQLite FTS5 full-text search | `ACCEPT-WIKI-003`  | `SCEN-WIKI-003`  | `TEST-INT-SRCH-01`  | `services/search_service.py`| `PKLMS-38`, `39` | SPECIFIED |
+| **`REQ-WIKI-004`** | Tag taxonomy extraction | `ACCEPT-WIKI-004`  | `SCEN-WIKI-004`  | `TEST-UNIT-WIKI-02` | `services/wiki_service.py` | `PKLMS-40`, `41` | SPECIFIED |
+| **`REQ-EXPORT-001`**| Directory tree mirroring | `ACCEPT-EXP-001`   | `SCEN-EXP-001`   | `TEST-UNIT-EXP-01`  | `services/export_service.py`| `PKLMS-44`, `45` | SPECIFIED |
+| **`REQ-EXPORT-002`**| Asset normalization (`./assets/`)| `ACCEPT-EXP-002` | `SCEN-EXP-002`   | `TEST-UNIT-EXP-02`  | `services/export_service.py`| `PKLMS-46`, `47` | SPECIFIED |
+| **`REQ-EXPORT-003`**| Root `README.md` manifest | `ACCEPT-EXP-003`   | `SCEN-EXP-003`   | `TEST-UNIT-EXP-03`  | `services/export_service.py`| `PKLMS-48`, `49` | SPECIFIED |
+| **`REQ-UI-001`**   | Workspace / Catalog views | `ACCEPT-UI-001`    | `SCEN-UI-001`    | `TEST-E2E-UI-01`    | `frontend/src/App.tsx` | `PKLMS-50`, `51` | SPECIFIED |
+| **`REQ-UI-002`**   | Markdown editor scaffolding | `ACCEPT-UI-002`    | `SCEN-UI-002`    | `TEST-E2E-UI-02`    | `frontend/src/Editor.tsx` | `PKLMS-52`, `53` | SPECIFIED |
+| **`REQ-NF-001`**   | Latency budgets (FTS5 < 50ms)| `ACCEPT-NF-001`   | `SCEN-NF-001`    | `TEST-BENCH-01`     | `core/database.py` | `PKLMS-16`, `38` | SPECIFIED |
+| **`REQ-NF-002`**   | Zero outbound network calls | `ACCEPT-NF-002`   | `SCEN-NF-002`    | `TEST-INT-SEC-01`   | `main.py` | `PKLMS-56` | SPECIFIED |
+| **`REQ-NF-003`**   | CommonMark export portability| `ACCEPT-NF-003`   | `SCEN-NF-003`    | `TEST-INT-EXP-02`   | `services/export_service.py`| `PKLMS-46`, `47` | SPECIFIED |
+| **`REQ-NF-004`**   | SQLite WAL & state recovery | `ACCEPT-NF-004`   | `SCEN-NF-004`    | `TEST-INT-DB-01`    | `core/database.py` | `PKLMS-02`, `03` | SPECIFIED |
+| **`REQ-NF-005`**   | Mypy strict & 90% coverage | `ACCEPT-NF-005`   | `SCEN-NF-005`    | `TEST-CI-GATE-01`   | `pyproject.toml` | `PKLMS-04` | SPECIFIED |
+| **`REQ-NF-006`**   | Sandboxed path containment | `ACCEPT-NF-006`   | `SCEN-NF-006`    | `TEST-UNIT-SEC-01`  | `services/storage_service.py`| `PKLMS-02`, `28` | SPECIFIED |
+
 
 ---
 
@@ -1182,3 +1195,38 @@ Following successful delivery and validation of the Phase 1 MVP, the system arch
 1. **Local LLM Compendium Agent**: Opt-in background agent utilizing local models (via Ollama or `llama-cpp-python`) to generate synthesis summaries of completed modules upon explicit user request.
 2. **Interactive Force-Directed Graph Canvas**: 2D WebGL/Canvas visualizer rendering the global knowledge graph, showing node clusters and knowledge connectivity.
 3. **Prerequisite DAG Locking**: An optional `is_blocking` dependency engine enforcing sequential prerequisite task completion for highly structured technical disciplines.
+
+---
+
+### 17. Addenda & Formal Amendments (SDD Delta Log)
+
+In accordance with SDD Invariants 4.1 (*Single Source of Truth*) and 4.3 (*Traceable Documentation Sync*), all formal modifications, relaxations, or extensions to approved baseline requirements are recorded as numbered Addenda. Approved baseline text is never silently overwritten without an audit trail and formal version increment.
+
+#### 17.1 ADD-001 (PKLMS-ADD-01): PROJECT / LAB External Link Support
+- **Addendum Identifier**: `ADD-001`
+- **Associated Ticket**: `PKLMS-ADD-01`
+- **Target Requirement**: `REQ-POLICY-004` (Section 5.3, Section 7.4)
+- **Effective Version**: `0.2.1-draft`
+- **Authorization Date**: October 18, 2026
+- **Status**: ✅ **APPROVED** by Lead Systems Architect & Human Expert
+
+##### 17.1.1 Problem Statement & Rationale
+In the baseline specification (`v0.2.0-draft`), completion of a `PROJECT/LAB` task strictly mandated the attachment of an uploaded local file (`.zip`, `.pdf`, `.md`) with a size $>0$ bytes. In practice, modern engineering projects and capstone laboratory assignments are frequently hosted externally on public/private source repositories (e.g., GitHub, GitLab) or live deployments. Forcing learners to create redundant local file archives when an external repository exists introduces artificial cognitive friction. 
+
+##### 17.1.2 Formal Requirement Amendment Diff
+```diff
+- REQ-POLICY-004: The system SHALL require an attached project file, report, or compiled summary (>0 bytes) before completing a PROJECT/LAB task.
++ REQ-POLICY-004: The system SHALL require either an attached project file/report (>0 bytes) OR a valid external project URL (GitHub repository, live deployment, or external project deliverable link) before completing a PROJECT/LAB task.
+```
+
+##### 17.1.3 Amended Operational Contract for Section 7.4
+Under `ADD-001`, Section 7.4 (*PROJECT / LAB Policy Specification*) is formally amended to include **External Project Deliverable Equivalence**:
+1. **Acceptable Artifact Types**:
+   - **Type A (Uploaded File)**: Attached archive (`.zip`), document (`.pdf`, `.md`), or project asset ($> 0$ bytes) stored in `/storage/artifacts/`.
+   - **Type B (External Project URL)**: Valid HTTP/HTTPS link to an external repository (e.g., `https://github.com/...`) or live application URL stored in the `tasks.git_url` or `tasks.external_url` field.
+2. **Policy Evaluation Invariant**:
+   $$\text{ValidProjectArtifact}(v) \iff (\text{ArtifactCount}(v) > 0 \land \text{Size} > 0) \lor (\text{url}(v) \ne \text{NULL} \land \text{IsURL}(\text{url}(v)))$$
+3. **Traceability Impact**:
+   - `PKLMS-24` (`TEST`): Asserts both upload and external URL validation paths.
+   - `PKLMS-25` (`FEAT`): Implements dual validation path in `services/policy_service.py`.
+
